@@ -89,3 +89,40 @@ def calculate_inverter_ac(dc: pd.DataFrame, parameters: pd.Series) -> pd.DataFra
     result["expected_ac_power"] = ac
     result.attrs.update(inverter_provenance(parameters), ac_status="computed")
     return result
+
+
+def calculate_inverter_ac_30kw_ceiling(
+    dc: pd.DataFrame, parameters: pd.Series
+) -> pd.DataFrame:
+    """DC V/W + official CEC row -> original Sandia equation -> AC W at 30 kW.
+
+    Project extension: Paco remains the reference rating in the efficiency
+    equation; only the external ceiling is 30,000 W. No coefficients are fit.
+    Preserves the ordinary pvlib baseline separately. Like pvlib, startup is
+    determined by p_dc < official Pso and returns -Pnt, without a zero clamp.
+    The extension does not enforce MPPT/current or thermal derating limits.
+    """
+    result = calculate_inverter_ac(dc, parameters).rename(
+        columns={"expected_ac_power": "expected_ac_power_cec"}
+    )
+    voltage = dc.expected_dc_voltage
+    power = dc.expected_dc_power
+    delta_v = voltage - float(parameters.Vdco)
+    a = float(parameters.Pdco) * (1 + float(parameters.C1) * delta_v)
+    b = float(parameters.Pso) * (1 + float(parameters.C2) * delta_v)
+    c = float(parameters.C0) * (1 + float(parameters.C3) * delta_v)
+    pre_clip = (
+        (float(parameters.Paco) / (a - b) - c * (a - b)) * (power - b)
+        + c * (power - b) ** 2
+    )
+    extended = np.minimum(pre_clip, 30_000.0)
+    extended = extended.where(power >= float(parameters.Pso), -float(parameters.Pnt))
+    if not np.isfinite(extended).all():
+        raise ValueError("Sandia extension returned nonfinite AC power")
+    result["expected_ac_power_30kw"] = extended
+    result.attrs.update(
+        inverter_extension="official Sandia pre-clipping equation; external 30000 W ceiling",
+        reference_paco_w=float(parameters.Paco), maximum_ac_output_w=30_000.0,
+        extension_parameter_policy="official coefficients unchanged; no refit",
+    )
+    return result

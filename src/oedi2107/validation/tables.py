@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .metrics import Normalization, mae, rmse, mbe, normalized_mae, normalized_rmse, r_squared
+from ..inputs import check_timestamp_basis
 
 
 @dataclass(frozen=True)
@@ -17,16 +18,17 @@ class ValidationResult:
     metrics: pd.DataFrame
 
 
-def _keyed(data: pd.DataFrame, column: str, by_inverter: bool) -> pd.DataFrame:
+def _keyed(data: pd.DataFrame, column: str, by_inverter: bool, timestamp_basis: str) -> pd.DataFrame:
     """Signal table → unique exact timestamp/device keys → one-signal frame."""
     if column not in data:
         raise ValueError(f"Required comparison column missing: {column}")
     times = data["timestamp"] if "timestamp" in data else data.index
-    if not isinstance(times.dtype, pd.DatetimeTZDtype):
-        raise ValueError("Comparison timestamps must already be timezone-aware datetimes")
+    if not pd.api.types.is_datetime64_any_dtype(times.dtype):
+        raise ValueError("Comparison timestamps must already be datetimes")
     if pd.isna(times).any():
         raise ValueError("Comparison timestamps cannot be missing")
     index = pd.DatetimeIndex(times, name="timestamp")
+    check_timestamp_basis(index, timestamp_basis)
     if by_inverter:
         if "inverter_id" not in data:
             raise ValueError("Inverter-level comparison requires inverter_id")
@@ -52,8 +54,8 @@ def _annotations(series: pd.Series, index: pd.Index, boolean: bool) -> pd.Series
         raise ValueError("Device annotations need a (timestamp, inverter_id) MultiIndex")
     times = series.index.get_level_values("timestamp") if isinstance(series.index, pd.MultiIndex) else series.index
     target_times = index.get_level_values("timestamp")
-    if not isinstance(times, pd.DatetimeIndex) or times.tz is None or times.hasnans:
-        raise ValueError("Annotation timestamps must be valid timezone-aware datetimes")
+    if not isinstance(times, pd.DatetimeIndex) or times.hasnans:
+        raise ValueError("Annotation timestamps must be valid datetimes")
     if str(times.tz) != str(target_times.tz):
         raise ValueError("Annotation timezones must match comparison timestamps explicitly")
     if isinstance(series.index, pd.MultiIndex):
@@ -81,6 +83,7 @@ def _validate(
     period_masks: Mapping[str, pd.Series] | None = None,
     periods: Sequence[str] | None = None,
     healthy_mask: pd.Series | None = None,
+    timestamp_basis: str = "aware",
 ) -> ValidationResult:
     """Exact outer-key pairs → explicit finite/period/healthy selection → reports."""
     if period_labels is not None and period_masks is not None:
@@ -94,8 +97,8 @@ def _validate(
         raise ValueError("periods must be a nonempty sequence of explicit labels")
     frames, summaries = [], []
     for quantity, (expected_column, measured_column, unit) in signals.items():
-        left = _keyed(expected, expected_column, by_inverter).rename(columns={"value": "expected"})
-        right = _keyed(measured, measured_column, by_inverter).rename(columns={"value": "measured"})
+        left = _keyed(expected, expected_column, by_inverter, timestamp_basis).rename(columns={"value": "expected"})
+        right = _keyed(measured, measured_column, by_inverter, timestamp_basis).rename(columns={"value": "measured"})
         left_times, right_times = left.index.get_level_values("timestamp"), right.index.get_level_values("timestamp")
         if str(left_times.tz) != str(right_times.tz):
             raise ValueError("Expected/measured timezones must match explicitly; no automatic conversion")
@@ -159,7 +162,8 @@ def _validate(
     table.attrs.update(alignment="outer union of exact keys; no resampling/filling/interpolation",
                        residual_sign="measured - expected", healthy_mask_supplied=healthy_mask is not None,
                        selected_periods=None if periods is None else tuple(periods),
-                       expected_provenance=dict(expected.attrs), measured_provenance=dict(measured.attrs))
+                       expected_provenance=dict(expected.attrs), measured_provenance=dict(measured.attrs),
+                       timestamp_basis=timestamp_basis)
     return ValidationResult(table=table, metrics=pd.DataFrame(summaries))
 
 

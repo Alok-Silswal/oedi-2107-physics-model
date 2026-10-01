@@ -11,6 +11,7 @@ dependencies = ["pvlib>=0.13,<0.17", "pandas>=2.2,<4", "numpy>=1.26,<3", "pyarro
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]
+real-data = ["pyarrow>=19,<26", "matplotlib>=3.9,<4"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

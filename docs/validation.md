@@ -45,6 +45,10 @@ timezone-aware DatetimeIndex. Both sides must use the same explicit timezone.
 No string parsing, timezone conversion, rounding, resampling or nearest-time
 matching is done. Duplicate keys raise errors.
 
+The real-data integration may explicitly set `timestamp_basis="pacific_wall_clock"`
+for the prepared unlocalized Pacific timestamps. Both sides then remain naive;
+no timezone or DST offset is assigned. Default `aware` behaviour is unchanged.
+
 | Interface | Expected columns | Measured columns | Join keys |
 | --- | --- | --- | --- |
 | `validate_dc` | `expected_dc_voltage`, `expected_dc_current`, `expected_dc_power` | `measured_dc_voltage`, `measured_dc_current`, `measured_dc_power` | timestamp + inverter_id |

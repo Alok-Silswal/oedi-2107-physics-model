@@ -15,14 +15,15 @@ from .plant import PlantPrediction, represent_inverter_outputs, aggregate_invert
 from collections.abc import Sequence
 
 
-def run_dc_foundation(measurements: pd.DataFrame, config: SystemConfig | None = None) -> pd.DataFrame:
+def run_dc_foundation(measurements: pd.DataFrame, config: SystemConfig | None = None, *, timestamp_basis: str = "aware") -> pd.DataFrame:
     """Measured weather → Faiman → CEC module MPP → ideal one-array DC table.
 
     Includes weather, temperature, diode parameters, module metrics and array
     metrics, preserving timestamps. No measured DC/AC channels enter the model.
+    Explicit pacific_wall_clock mode keeps prepared local timestamps unlocalized.
     """
     config = config or SystemConfig()
-    weather = validate_measurements(measurements)
+    weather = validate_measurements(measurements, timestamp_basis=timestamp_basis)
     parameters = load_cec_module(config.cec_module_entry)
     logging.getLogger(__name__).warning(
         "%s; Faiman u0=%g, u1=%g (%s); module temperature used as cell proxy; POA used directly as effective irradiance",
@@ -32,7 +33,8 @@ def run_dc_foundation(measurements: pd.DataFrame, config: SystemConfig | None = 
     module_dc = calculate_module_dc(weather.poa, temperature, parameters)
     result = pd.concat([weather, temperature.rename("temp_cell"), module_dc, scale_module_mpp(module_dc, config)], axis=1)
     result.attrs.update(pvlib_version=pvlib.__version__, cec_module_entry=parameters.name,
-                        topology=config.topology_provenance, faiman_provenance=config.faiman.provenance)
+                        topology=config.topology_provenance, faiman_provenance=config.faiman.provenance,
+                        timestamp_basis=timestamp_basis)
     return result
 
 

@@ -304,6 +304,33 @@ All earlier unresolved assumptions remain unchanged.
 
 ## Assumptions and human review
 
+For the first uncalibrated real-data DC integration, see
+[run instructions and output definitions](docs/real_dc_run.md). It stops at
+ideal/pre-loss DC and preserves the prepared Pacific wall-clock dataset as-is.
+The full run and diagnostics are saved under `outputs/2107_dc_ideal`.
+See [first-run coverage, metrics and topology evidence](docs/real_dc_findings.md)
+for the completed uncalibrated results.
+The next diagnostic stage identifies common-plant candidate calibration periods:
+see [screening rules, sensitivity and findings](docs/dc_candidate_screening.md).
+These masks are provisional; K_DC remains unset and no calibration is performed.
+The [DC bias decomposition](docs/dc_bias_decomposition.md) adds diagnostic solar
+geometry, matched AM/PM comparisons and fixed Faiman perturbations. It preserves
+the production model and does not establish a calibrated loss factor.
+The [focused POA timing audit](docs/poa_timing_audit.md) compares only the seven
+specified timing offsets and documents unresolved sensor/logger provenance.
+The [no-loss AC reference](docs/ac_no_loss_reference.md) passes ideal DC directly
+to the unchanged Sandia inverter model, without assigning K_DC or replacing
+the normal AC output interface.
+The [measured DC-to-AC diagnostic](docs/measured_conversion.md) removes upstream
+PV-model bias by evaluating Sandia at measured DC voltage and V-times-I power.
+It preserves the production inverter parameters and leaves K_DC unset.
+The [controlled 30 kW ceiling extension](docs/inverter_ceiling.md) preserves
+27.6 kW as the official Sandia reference rating and adds a separate 30 kW
+maximum-output variant with unchanged efficiency coefficients.
+The final [frozen research baseline](docs/research_baseline.md) uses pre-loss DC
+directly and the 30 kW extension. Its runner saves complete inverter/plant outputs
+and validates meter start-of-interval averages without fitting any parameters.
+
 - **Topology is inferred:** 20 modules/string × 6 strings/inverter × 24 inverters
   = 120 modules/inverter and 2880 total. At nominal 310 W/module this is 892.8 kW DC,
   consistent with the approximate 893 kW description. Confirm against wiring records.
