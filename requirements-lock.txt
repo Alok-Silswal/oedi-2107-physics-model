@@ -9,6 +9,7 @@ packaging==26.3
 pandas==3.0.6
 pluggy==1.6.0
 pvlib==0.16.1
+pyarrow==25.0.1
 Pygments==2.21.0
 pytest==9.1.1
 python-dateutil==2.9.0.post0

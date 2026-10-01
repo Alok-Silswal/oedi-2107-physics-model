@@ -7,7 +7,7 @@ name = "oedi-2107-physics-model"
 version = "0.1.0"
 description = "Measured-POA, Faiman and CEC DC foundation for OEDI 2107"
 requires-python = ">=3.11"
-dependencies = ["pvlib>=0.13,<0.17", "pandas>=2.2,<4", "numpy>=1.26,<3"]
+dependencies = ["pvlib>=0.13,<0.17", "pandas>=2.2,<4", "numpy>=1.26,<3", "pyarrow>=25.0.1,<26"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]
