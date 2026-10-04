@@ -1,0 +1,76 @@
+===============================================================================
+                                OEDI SYSTEM 2107                               
+                STAGE 1 | FROZEN PHYSICS-BASED RESEARCH BASELINE               
+===============================================================================
+
+SYSTEM / COVERAGE
+-------------------------------------------------------------------------------
+  Plant nominal DC capacity                                           ~893 kW
+  Inverters                                                                24
+  Total timestamps                                                    622,294
+  Model-input / computed timestamps                                   526,068
+  Model-input availability                                            84.54 %
+  Total inverter records                                           14,935,056
+
+FROZEN MODEL
+-------------------------------------------------------------------------------
+  POA alignment                                                         0 min
+  Temperature model                                                    Faiman
+  Faiman u0                                                                25
+  Faiman u1                                                              6.84
+  PV module                                                Hyundai HiS-M310TI
+  Array topology (inferred)                            20 series x 6 parallel
+  Modules / inverter                                                      120
+  Total modules                                                          2880
+  Global K_DC                                                 UNSET; bypassed
+  Inverter model                               CEC / Sandia ceiling extension
+  Sandia coefficients                                 Official CEC; unchanged
+  CEC reference rating                                                27.6 kW
+  Maximum AC ceiling                                                  30.0 kW
+
+1. DC VALIDATION - CANDIDATE SCREENED OPERATION
+-------------------------------------------------------------------------------
++----------+--------------+-------------+-------------+-------------+---------+
+| Quantity |        Pairs |         MAE |        RMSE |         MBE |     R^2 |
++----------+--------------+-------------+-------------+-------------+---------+
+| Vdc      |      129,444 |     14.85 V |     17.69 V |    -13.06 V |   0.627 |
+| Idc      |      135,072 |      2.63 A |      3.17 A |     -1.73 A |   0.757 |
+| Pdc      |      129,444 |     1.91 kW |     2.30 kW |    -1.51 kW |   0.704 |
++----------+--------------+-------------+-------------+-------------+---------+
+
+  Unchanged candidate subset; pooled inverter observations.
+  Inverter 05: measured Vdc unavailable; no Vdc/Pdc validation.
+
+2. INVERTER AC VALIDATION - ALL VALID PAIRS
+-------------------------------------------------------------------------------
++----------+--------------+-------------+-------------+-------------+---------+
+| Quantity |        Pairs |         MAE |        RMSE |         MBE |     R^2 |
++----------+--------------+-------------+-------------+-------------+---------+
+| Pac      |   12,625,632 |    1.633 kW |    4.721 kW |   -1.333 kW |   0.796 |
++----------+--------------+-------------+-------------+-------------+---------+
+
+3. PLANT-METER VALIDATION - 15-MINUTE
+-------------------------------------------------------------------------------
++----------+--------------+-------------+-------------+-------------+---------+
+| Quantity |        Pairs |         MAE |        RMSE |         MBE |     R^2 |
++----------+--------------+-------------+-------------+-------------+---------+
+| Pac      |      154,611 |    44.94 kW |    77.10 kW |   -39.98 kW |   0.896 |
++----------+--------------+-------------+-------------+-------------+---------+
+
+  Meter pairs are valid 15-minute intervals.
+  Alignment: mean(model at t, t+5, t+10) vs meter at interval-start t.
+  All three samples required; average power [kW], no energy conversion.
+
+STAGE 1 CONCLUSION
+-------------------------------------------------------------------------------
+  STATUS     COMPLETE / FROZEN / UNCALIBRATED
+
+  Plant-power dynamics captured; systematic overprediction remains.
+  Negative MBE: measured power is below expected power on average.
+  Residual = measured - expected
+  Residuals include real losses AND model/input uncertainty.
+  Baseline is not an unbiased forecast or an absolute fault threshold.
+
+  NEXT       Stage 2: availability-aware residual analysis and
+             inverter underperformance detection (not started).
+===============================================================================

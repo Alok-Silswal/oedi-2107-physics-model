@@ -2,5 +2,9 @@
 __pycache__/
 *.egg-info/
 .pytest_cache/
-outputs/
+outputs/*
+!outputs/2107_research_baseline/
+outputs/2107_research_baseline/*
+!outputs/2107_research_baseline/stage1_validation_summary.txt
+!outputs/2107_research_baseline/stage1_validation_metrics.csv
 /data/
