@@ -55,7 +55,6 @@ consensus deliberately trades coverage for protection against individual weaknes
   preliminary/candidate distributions, POA/temperature/hour/season/year bins,
   joint condition tables, monthly row counts and contiguous candidate runs.
 - Standalone PNGs, review-date provenance and source SHA256 provenance.
-- `report.md`: compact run counts, thresholds and ratio summaries.
 
 Power ratios use the median of the **23 measured powers**, divided by common
 ideal power; they are not the product of independently computed median V/I.

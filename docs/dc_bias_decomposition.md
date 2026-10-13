@@ -175,6 +175,8 @@ No new AC prediction, clipping cap or inverter fit is introduced.
 
 Artifacts include AM/PM cell tables (including sparse/unmatched cells), binned
 ratio/count tables, correlations, counterfactual thermal outputs, phase/calendar
-summaries, four standalone PNGs, a concise generated report and source SHA256
-provenance. All six consumed source files have unchanged hashes. Production
+summaries, four standalone PNGs and source SHA256 provenance. The summary tables
+remain in [matched_summary.csv](../outputs/2107_dc_bias/matched_summary.csv) and
+[faiman_sensitivity_summary.csv](../outputs/2107_dc_bias/faiman_sensitivity_summary.csv).
+All six consumed source files have unchanged hashes. Production
 physics functions, configuration, inverter parameters and cleaned data are untouched.

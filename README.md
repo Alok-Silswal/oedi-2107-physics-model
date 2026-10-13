@@ -1,4 +1,4 @@
-# OEDI System 2107 physics model (through Block 6; Block 7 validation tools)
+# OEDI System 2107: frozen Stage 1 physics and research diagnostics
 
 This package implements measured POA → Faiman temperature → explicit CEC
 single-diode module calculation. The requested ideal 20-series × 6-parallel
@@ -6,19 +6,58 @@ scaling gives MPP for one inverter's DC array. Block 4 adds an optional global
 static DC power derate with its numerical factor currently unset. Block 5 adds
 one inverter's DC-to-AC conversion using official CEC/Sandia parameters. Block 6
 retains 24 named inverter records and sums AC at each original timestamp.
-Block 7 provides reusable exact-key comparison metrics and arithmetic residuals
-for future supplied data. No real-data validation, DC-loss fit, inverter fitting,
-time resampling, fault detection or degradation analysis has been performed.
+Block 7 provides reusable exact-key comparison metrics and arithmetic residuals.
+Real-data validation is complete; Stage 1 is frozen and uncalibrated. No DC-loss
+factor or Sandia inverter coefficients have been fitted.
+
+The canonical [frozen Stage 1 route](docs/research_baseline.md) is
+`scripts/run_frozen_research.py` using ideal pre-loss DC, bypassing unset K_DC,
+and the documented 30 kW inverter ceiling extension. The optional Block 4–6
+interfaces below remain available; they are not the frozen research route.
+Read the [saved Stage 1 summary](docs/stage1_validation_summary.md) without
+regenerating it.
+
+The [short-term forecasting benchmark](docs/short_term_forecasting_benchmark.md)
+is complete at 5, 15 and 30 minutes. The earlier
+[readiness report](docs/stage2_readiness.md) and
+[inconclusive decline experiment](docs/performance_change_feasibility.md)
+preserve historical recommendations and findings; their next-action statements
+describe the status at the time, not the current plan.
+
+**Agreed Stage 2 direction: weather → frozen physics calculation → learned
+correction. This is planned, not implemented.** The completed historical-feature
+forecasting benchmark does not implement that physics-plus-ML route.
 
 ## Setup and run (PowerShell, Python 3.11+)
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python -m pip install -e ".[test]"
+.\.venv\Scripts\python -m pip install -r requirements-lock.txt
+.\.venv\Scripts\python -m pip install -e ".[test,real-data]" -c requirements-lock.txt
 .\.venv\Scripts\python examples/run_foundation.py
 .\.venv\Scripts\python examples/run_inverter.py
 .\.venv\Scripts\python -m pytest
 ```
+
+These setup commands create/install into `.venv`. The examples print synthetic
+results without writing scientific outputs; pytest may write caches and temporary
+test files. `test` supplies pytest; `real-data` supplies script-diagnostic imports:
+matplotlib, scikit-learn, scipy, joblib and threadpoolctl. Joblib/threadpoolctl/scipy
+are direct imports even though other packages also depend on them. PyArrow is
+already a base dependency. Plotting/ML support packages such as contourpy and
+cloudpickle are transitive and belong in the lock, not the optional declaration.
+
+Run scripts from the repository root only when regeneration is intended:
+
+| Command (`.venv/Scripts/python` followed by) | Files written or regenerated |
+|---|---|
+| `scripts/run_frozen_research.py` | Frozen model/validation outputs in `outputs/2107_research_baseline/`; reruns overwrite results. |
+| `scripts/show_stage1_results.py` | Reads saved results, then overwrites `stage1_validation_summary.txt` and `stage1_validation_metrics.csv` in that output directory, and `docs/stage1_validation_summary.md`. No physics calculation, but **not read-only**. |
+| `scripts/benchmark_short_term_forecasting.py` | Fits the fixed benchmark and regenerates models, predictions, scores, plots and provenance in `outputs/2107_short_term_forecasting/`. |
+
+Earlier diagnostic runners and the data-preparation notebooks also write derived
+files as documented in their reports. Their historical evidence is retained;
+running them is not required to review saved findings.
 
 The example uses synthetic weather and enables INFO logging, which prints the
 exact CEC key, full parameter row and pvlib version. Library callers should enable
@@ -35,9 +74,10 @@ The CEC row reports STC = 309.6 W (36 V × 8.6 A) and `N_s=60`;
 review these database fields against the nameplate/datasheet. They are retained
 unchanged. CEC STC × 2880 is 891.648 kW, distinct from nominal 892.8 kW.
 
-`requirements-lock.txt` records the tested dependency versions. To reproduce
-these versions, run `python -m pip install -r requirements-lock.txt` before
-installing the editable package.
+`requirements-lock.txt` is the existing flat installed-version snapshot for the
+base, test and script-diagnostic dependencies. The setup above installs its exact
+versions and constrains the editable install to them. Diagnostic additions retain
+every frozen baseline pin; unrelated notebook/kernel tooling is not included.
 
 ## Layout and interface
 

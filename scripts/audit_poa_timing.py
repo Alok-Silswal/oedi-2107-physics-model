@@ -126,11 +126,6 @@ def main():
         "best_offset_minutes_by_gap":best,"best_policy":"smallest absolute AM-PM median gap in the seven supplied offsets; not a clock calibration",
         "k_dc":None,"model_parameters":"unchanged","timestamp_and_poa_policy":"exact lookups only; original indices/values unmodified"}
     (args.output/"provenance.json").write_text(json.dumps(provenance,indent=2),encoding="utf-8")
-    lines=["# Focused POA timing audit","","Positive offset uses POA(t+offset) for electrical t; original data unchanged.",
-        f"Equal support: {int(common.sum())} of {len(candidate)} frozen candidates. Temperature remains fixed.","","```",
-        scores.to_string(index=False),"```","",f"Smallest absolute AM-PM gap within the fixed set: {best:+d} minutes.",
-        "This descriptive ranking does not identify a logger clock correction. See metadata_audit.json and year/season/inverter comparisons."]
-    (args.output/"report.md").write_text("\n".join(lines)+"\n",encoding="utf-8")
     print(scores.to_string(index=False),flush=True)
     print(json.dumps({k:provenance[k] for k in ("equal_support_count","excluded_from_equal_support","best_offset_minutes_by_gap","sources_unchanged")}),flush=True)
 

@@ -128,23 +128,6 @@ def plots(features, preliminary, candidate, output):
     (output / "review_plot_dates.json").write_text(json.dumps(review_dates), encoding="utf-8")
 
 
-def write_report(features, masks, counts, thresholds, output):
-    """Saved diagnostic quantities -> concise text report -> review artifact, no fitting."""
-    candidate = masks.candidate_healthy_mask
-    report = ["# DC candidate diagnostics", "", "Candidates only; no verified-health claim, calibration or K_DC value.",
-              "Source hashes unchanged. See ../../docs/dc_candidate_screening.md for rationale and limitations.", "",
-              "## Filtering", "", "```", counts.to_string(index=False), "```", "", "## Explicit thresholds", "",
-              "```json", json.dumps(asdict(thresholds), indent=2), "```", "", "## Candidate ratios", ""]
-    for quantity in ("voltage", "current", "power"):
-        ratio = features.loc[candidate, f"{quantity}_ratio"]
-        report.append(f"- {quantity}: p10/median/p90 = {ratio.quantile(.1):.4f}/{ratio.median():.4f}/{ratio.quantile(.9):.4f}")
-    report.extend(["", f"Power-ratio > 1 timestamps: {int(features.loc[candidate,'power_ratio'].gt(1).sum())}.", "",
-                   "A constant global loss factor is not demonstrated. Review weather/time dependencies and calendar coverage.",
-                   "Consensus cannot remove common-mode abnormal operation or common irradiance/thermal bias.",
-                   "Threshold sensitivity and joint-condition CSVs retain full descriptive evidence; no parameter is estimated."])
-    (output / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dc-results", type=Path, default=Path("outputs/2107_dc_ideal"))
@@ -257,7 +240,6 @@ def main():
                   "source_sha256_before":before,"source_sha256_after":after,"source_files_unchanged":before==after,
                   "model_configuration_unchanged":asdict(config), "status":"candidates, not confirmed healthy/MPP; no split selected"}
     (args.output / "provenance.json").write_text(json.dumps(provenance, indent=2), encoding="utf-8")
-    write_report(features, masks, counts, thresholds, args.output)
     print(json.dumps({k:provenance[k] for k in ("candidate_timestamps","candidate_power_pairs","candidate_current_pairs","k_dc")}), flush=True)
 
 

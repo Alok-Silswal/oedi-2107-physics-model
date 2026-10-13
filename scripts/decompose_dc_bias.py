@@ -232,11 +232,6 @@ def main():
                 "summary_weights":"min(AM count, PM count); only cells with >=10 each unless explicit sensitivity >=5",
                 "atmosphere":"solarposition default temperature 12 C; altitude from metadata; geometry only"}
     (args.output/"provenance.json").write_text(json.dumps(provenance,indent=2),encoding="utf-8")
-    lines=["# Diagnostic DC bias decomposition", "", "No calibration; K_DC remains unset. Original measurements, timestamps and physics parameters are unchanged.",
-           "", f"Frozen candidates: {len(candidate)}; preliminary comparison: {len(frame)}. Sources verified unchanged.",
-           "", "## Matched comparisons", "", "```",matched_results.to_string(index=False),"```", "", "## Fixed Faiman sensitivity", "", "```",sensitivity_summary.to_string(index=False),"```", "",
-           "Tables report descriptive associations, not causal attribution or optimized parameters. See docs/dc_bias_decomposition.md for interpretation and limitations."]
-    (args.output/"report.md").write_text("\n".join(lines)+"\n",encoding="utf-8")
 
 
 if __name__ == "__main__":
