@@ -22,8 +22,8 @@ def digest(path):
     return h.hexdigest()
 
 
-def indexed(path, columns=None):
-    frame = pd.read_parquet(path, columns=columns)
+def indexed(path, columns=None, filters=None):
+    frame = pd.read_parquet(path, columns=columns, filters=filters)
     if "measured_on" in frame:
         frame.index = pd.DatetimeIndex(pd.to_datetime(frame.pop("measured_on")), name="timestamp")
     return frame

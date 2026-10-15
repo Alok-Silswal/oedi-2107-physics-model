@@ -1,7 +1,7 @@
 # OEDI System 2107: frozen Stage 1 physics and research diagnostics
 
-This package implements measured POA → Faiman temperature → explicit CEC
-single-diode module calculation. The requested ideal 20-series × 6-parallel
+This package implements measured POA Ã¢â€ â€™ Faiman temperature Ã¢â€ â€™ explicit CEC
+single-diode module calculation. The requested ideal 20-series Ãƒâ€” 6-parallel
 scaling gives MPP for one inverter's DC array. Block 4 adds an optional global
 static DC power derate with its numerical factor currently unset. Block 5 adds
 one inverter's DC-to-AC conversion using official CEC/Sandia parameters. Block 6
@@ -12,7 +12,7 @@ factor or Sandia inverter coefficients have been fitted.
 
 The canonical [frozen Stage 1 route](docs/research_baseline.md) is
 `scripts/run_frozen_research.py` using ideal pre-loss DC, bypassing unset K_DC,
-and the documented 30 kW inverter ceiling extension. The optional Block 4–6
+and the documented 30 kW inverter ceiling extension. The optional Block 4Ã¢â‚¬â€œ6
 interfaces below remain available; they are not the frozen research route.
 Read the [saved Stage 1 summary](docs/stage1_validation_summary.md) without
 regenerating it.
@@ -24,9 +24,11 @@ is complete at 5, 15 and 30 minutes. The earlier
 preserve historical recommendations and findings; their next-action statements
 describe the status at the time, not the current plan.
 
-**Agreed Stage 2 direction: weather → frozen physics calculation → learned
-correction. This is planned, not implemented.** The completed historical-feature
-forecasting benchmark does not implement that physics-plus-ML route.
+**Agreed Stage 2 direction: weather Ã¢â€ â€™ frozen physics calculation Ã¢â€ â€™ learned
+correction.** `scripts/forecast_stage2_weather.py` implements the first component:
+15-minute weather forecasts. `scripts/calculate_stage2_physics.py` applies frozen
+physics and constructs correction labels. The classical correction comparison is implemented in `scripts/compare_stage2_correction.py`. The earlier historical-feature AC
+benchmark does not implement that physics-plus-ML route.
 
 ## Setup and run (PowerShell, Python 3.11+)
 
@@ -42,7 +44,7 @@ python -m venv .venv
 These setup commands create/install into `.venv`. The examples print synthetic
 results without writing scientific outputs; pytest may write caches and temporary
 test files. `test` supplies pytest; `real-data` supplies script-diagnostic imports:
-matplotlib, scikit-learn, scipy, joblib and threadpoolctl. Joblib/threadpoolctl/scipy
+matplotlib, scikit-learn, scipy, joblib, threadpoolctl and XGBoost. Joblib/threadpoolctl/scipy
 are direct imports even though other packages also depend on them. PyArrow is
 already a base dependency. Plotting/ML support packages such as contourpy and
 cloudpickle are transitive and belong in the lock, not the optional declaration.
@@ -54,6 +56,11 @@ Run scripts from the repository root only when regeneration is intended:
 | `scripts/run_frozen_research.py` | Frozen model/validation outputs in `outputs/2107_research_baseline/`; reruns overwrite results. |
 | `scripts/show_stage1_results.py` | Reads saved results, then overwrites `stage1_validation_summary.txt` and `stage1_validation_metrics.csv` in that output directory, and `docs/stage1_validation_summary.md`. No physics calculation, but **not read-only**. |
 | `scripts/benchmark_short_term_forecasting.py` | Fits the fixed benchmark and regenerates models, predictions, scores, plots and provenance in `outputs/2107_short_term_forecasting/`. |
+| `scripts/forecast_stage2_weather.py --prepare` | Loads data, checks shared splits and prints eligibility/planned work; no fitting or output writes. |
+| `scripts/forecast_stage2_weather.py --step training_1` (then `training_2`, `training_3`, `validation`) | Runs only the named weather step; compatible completed fits/results are reused in `outputs/2107_stage2_weather/`. |
+| `scripts/calculate_stage2_physics.py --prepare` | Shared preparation only; no physics calculation or output writes. |
+| `scripts/calculate_stage2_physics.py --step training_1` (same step names) | Applies frozen physics to saved step weather forecasts and creates correction labels. |
+| `scripts/compare_stage2_correction.py` | Four fixed classical correction fits on saved training blocks; validation-only predictions/metrics and reusable fitted bundles in `outputs/2107_stage2_correction/`. Compatible completed fits are reused. |
 
 Earlier diagnostic runners and the data-preparation notebooks also write derived
 files as documented in their reports. Their historical evidence is retained;
@@ -70,9 +77,9 @@ are manually hard-coded.
 Verified exact entry in pvlib 0.16.1:
 `Hyundai_Heavy_Industries_Green_Energy_Co__HiS_M310TI`.
 The distinct `HiS_S310TI` entry is not used.
-The CEC row reports STC = 309.6 W (36 V × 8.6 A) and `N_s=60`;
+The CEC row reports STC = 309.6 W (36 V Ãƒâ€” 8.6 A) and `N_s=60`;
 review these database fields against the nameplate/datasheet. They are retained
-unchanged. CEC STC × 2880 is 891.648 kW, distinct from nominal 892.8 kW.
+unchanged. CEC STC Ãƒâ€” 2880 is 891.648 kW, distinct from nominal 892.8 kW.
 
 `requirements-lock.txt` is the existing flat installed-version snapshot for the
 base, test and script-diagnostic dependencies. The setup above installs its exact
@@ -84,7 +91,7 @@ every frozen baseline pin; unrelated notebook/kernel tooling is not included.
 - `src/oedi2107/config.py`: system metadata, inferred topology, thermal assumptions.
 - `inputs.py`: measured-input validation; no irradiance transposition.
 - `thermal.py`: `estimate_cell_temperature(poa, temp_air, wind_speed, config)`.
-- `module.py`: database loading and explicit `calcparams_cec` → `singlediode`.
+- `module.py`: database loading and explicit `calcparams_cec` Ã¢â€ â€™ `singlediode`.
 - `array.py`: ideal one-inverter array scaling.
 - `dc_losses.py`: `DCLossConfig` and `apply_dc_losses` (global DC derate).
 - `inverter.py`: exact CEC retrieval and explicit `pvlib.inverter.sandia` conversion.
@@ -105,13 +112,13 @@ every frozen baseline pin; unrelated notebook/kernel tooling is not included.
   externally supplied labels/masks and no model fitting.
 
 Supply a pandas DataFrame with a unique, increasing timezone-aware DatetimeIndex
-and columns `poa` [W/m²], `temp_air` [°C], `wind_speed` [m/s]. Inputs must be aligned
+and columns `poa` [W/mÃ‚Â²], `temp_air` [Ã‚Â°C], `wind_speed` [m/s]. Inputs must be aligned
 and finite. Negative POA/wind and missing readings raise errors; decide sensor
 offset correction and data quality treatment upstream. POA is retained unchanged.
 Extra measurement channels (DC voltage/current, inverter AC, plant meter) are
 not used. The model does not infer timestamps or the site's timezone.
 
-Output retains `temp_cell` [°C], adjusted diode parameters (photocurrent and
+Output retains `temp_cell` [Ã‚Â°C], adjusted diode parameters (photocurrent and
 saturation current [A], series/shunt resistance [ohm], `nNsVth` [V]), module
 `Vmp`, `Voc` [V], `Imp`, `Isc` [A], `Pmp` [W], and `expected_dc_voltage` [V],
 `expected_dc_current` [A], `expected_dc_power` [W]. In the ideal foundation,
@@ -161,7 +168,7 @@ result = run_dc_model(measured_weather, config)
 ```
 
 `run_dc_foundation` retains its original ideal-only interface and column names
-for Blocks 1–3. A factor in the configuration does not derate that function's
+for Blocks 1Ã¢â‚¬â€œ3. A factor in the configuration does not derate that function's
 outputs. Both entry points stop at one array's DC output, without aggregation.
 
 K_DC will later be estimated from **healthy periods of cleaned real operating
@@ -321,7 +328,7 @@ Before Block 7, confirm real inverter IDs, timestamp/timezone/interval semantics
 meter instantaneous-versus-average-power-versus-energy meaning, and nighttime
 sign conventions. The following remain unresolved and unchanged: provisional
 Faiman coefficients, measured POA as effective irradiance, unset numerical K_DC,
-inferred 20×6 topology, ABB US/480 V variant, CEC `Idcmax` versus inferred array
+inferred 20Ãƒâ€”6 topology, ABB US/480 V variant, CEC `Idcmax` versus inferred array
 current, and possible measured clipping discrepancy versus unchanged CEC Paco.
 No calibration, residuals, validation metrics, fault or degradation analysis is
 implemented by Block 6.
@@ -371,10 +378,10 @@ The final [frozen research baseline](docs/research_baseline.md) uses pre-loss DC
 directly and the 30 kW extension. Its runner saves complete inverter/plant outputs
 and validates meter start-of-interval averages without fitting any parameters.
 
-- **Topology is inferred:** 20 modules/string × 6 strings/inverter × 24 inverters
+- **Topology is inferred:** 20 modules/string Ãƒâ€” 6 strings/inverter Ãƒâ€” 24 inverters
   = 120 modules/inverter and 2880 total. At nominal 310 W/module this is 892.8 kW DC,
   consistent with the approximate 893 kW description. Confirm against wiring records.
-- Plant is fixed tilt, 25° tilt and 180° azimuth; these are metadata because POA is
+- Plant is fixed tilt, 25Ã‚Â° tilt and 180Ã‚Â° azimuth; these are metadata because POA is
   measured directly. The inverter database identity now drives Block 5 only.
 - Faiman `u0=25`, `u1=6.84` are **provisional pvlib defaults**, not calibrated plant
   coefficients. Confirm mounting, wind sensor height/exposure and suitable values.
@@ -391,3 +398,180 @@ and validates meter start-of-interval averages without fitting any parameters.
 
 References: [pvlib Faiman](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.temperature.faiman.html)
 and [explicit single-diode workflow](https://pvlib-python.readthedocs.io/en/stable/user_guide/modeling_topics/singlediode.html).
+
+## Stage 2 chronological protocol
+
+One shared target-time split uses the QC-valid date-range overlap, preserving
+internal gaps: POA 2017-11-01 07:10 to 2023-11-01 23:55; ambient/wind
+2017-12-01 00:00 to 2023-10-31 23:45; complete-fleet AC 2017-11-01 00:00
+to 2023-11-01 23:55. Timestamps remain naive Pacific wall-clock; no UTC
+reinterpretation. DST-ambiguous/nonexistent geometry remains excluded.
+
+The common span is [2017-12-01 00:00, 2023-10-31 23:50), with the final
+recorded target at 23:45. The exclusive end is one five-minute grid step past
+that record. Boundaries are 70%/85% of elapsed span, rounded **up** to five
+minutes: validation starts 2022-01-21 16:45; testing starts 2022-12-11 20:20.
+Targets at a boundary enter the later split; historical inputs may precede it.
+`SPLIT` in `scripts/forecast_stage2_weather.py` is the shared definition.
+Previously explored 2022-2023 records overlap the eventual test period; it is
+held out from new fitting/selection, not wholly unseen.
+
+| Split | Eligible origins | POA labels | Ambient labels | Wind labels | Fleet-power labels |
+|---|---:|---:|---:|---:|---:|
+| Training | 377763 | 353530 | 125979 | 125982 | 377759 |
+| Validation | 70559 | 61233 | 23467 | 23481 | 70557 |
+| Testing | 77561 | 67187 | 25886 | 25890 | 77561 |
+
+Eligibility retains the two-hour history, valid current POA and latest ambient/
+wind inputs, with older missing lags imputed using fitting data only. Weather
+lookup remains latest label 15-30 minutes before each feature timestamp, an
+unverified availability assumption. Labels use exact timestamps without filling;
+POA selection scores daylight only, environment scores all valid labels.
+
+Proposed correction-training scheme: initial 40% of the training duration for
+weather fitting/selection, then three expanding forecast blocks covering its
+remaining 20% each. Block edges are 2019-07-29 01:55, 2020-05-26 14:55,
+2021-03-25 03:50 and 2022-01-21 16:45. Weather configurations are selected once
+within the initial period: first 80% fits candidates, last 20% selects. They
+remain frozen for all three expanding refits and outer validation/test.
+Each refit uses only labels preceding its forecast block. Outer validation
+selects correction settings; it does not retune weather configurations.
+All pipeline choices must freeze before testing. The initial period supplies
+no correction-training forecasts.
+
+Search: 11 configurations per variable (Ridge, bounded forest, histogram
+boosting, XGBoost), seed 2107, four CPU threads. The unlimited-depth forest
+candidate is removed; depth 12/leaf 5 and depth 20/leaf 5 remain. Other
+candidates are unchanged. Planned fits: **33 initial selection + 9 training
+refits + 3 validation refits = 45**; test inference uses saved models with zero
+fits. Depth-20 200-tree forests can still be slow.
+The initial step saves selection progress; each step saves winners, fitted
+models/preprocessing and forecasts; reuse requires matching source hashes, split, code and settings.
+Physics consumes those step forecasts using unchanged frozen calculations.
+
+### Superseded exploratory Stage 2 results
+
+The old January-June/July-September and January-September/October-December 2018
+selection, followed by annual expanding 2019-2021 forecasts, is superseded.
+These winners are exploratory, **not selections under the shared protocol**.
+Seed 2107, four threads; software and retained configurations remain documented by the
+existing lock, frozen Stage 1 configuration and unchanged model definitions.
+
+| Variable | Exploratory winner | Pooled MAE / RMSE | Persistence MAE / RMSE |
+|---|---|---:|---:|
+| poa (W/m2) | forest {'max_depth': None, 'min_samples_leaf': 10} | 34.860089 / 76.871805 | 53.469264 / 92.344000 |
+| ambient (C) | forest {'max_depth': 20, 'min_samples_leaf': 5} | 0.474238 / 0.837520 | 0.661258 / 1.248898 |
+| wind (m/s) | ridge {'alpha': 0.1} | 0.221004 / 0.383598 | 0.193229 / 0.396264 |
+
+Prior annual forecast/valid-power-label counts: 2019 104797/104795; 2020
+84527/84527; 2021 87150/87150. All physics calculations were valid. Daylight
+physics MAE / mean signed correction (actual minus physics), kW: 2019 68.070 / -50.726; 2020 62.540 / -43.964; 2021 94.793 / -76.810.
+Wind ML did not improve persistence MAE. Large stale row tables and their
+annual-run settings/scores were removed after retaining this summary.
+
+The classical correction comparison uses seven agreed forecast/origin features,
+training-only preprocessing, and four fixed engineering configurations. It selects
+by daylight validation MAE, with physics and raw persistence references. Paired
+calendar-week uncertainty describes validation comparisons after selection, not
+confirmatory test evidence. Current measured power/POA are assumed available
+at the origin; no testing inference or weather/physics regeneration is performed.
+
+The correction HPO extends the same script: `--prepare` freezes/checks 43
+candidates and reports reuse without fitting; `--hpo` executes or resumes that
+plan sequentially. Results are separate in `outputs/2107_stage2_correction/hpo/`;
+the original four-model comparison is preserved. Ridge uses seven fixed alphas;
+each tree family includes its baseline plus 11 unique seeded random candidates.
+Only family-winning bundles/predictions are retained; all trial scores, failures
+and runtimes remain saved. Failed trials are not automatically retried or replaced.
+Exact MAE ties use frozen candidate order. No validation refit or testing occurs.
+Ranges and budget were specified after inspecting baseline results; validation
+scores are model-selection results, not unbiased final performance estimates.
+[Bergstra and Bengio (2012)](https://www.jmlr.org/papers/v13/bergstra12a.html)
+support random search as a strategy, not these project-specific ranges/budgets.
+
+Matched neural corrections use `scripts/train_stage2_neural.py`: the same seven
+inputs and eligible examples, saved training-only imputation, binary missing
+indicators, continuous-input standardization, and uncentered target-SD scaling.
+Both use a four-unit tanh projection and linear readout; the middle is either
+four-unit tanh or four-qubit, two-layer StronglyEntanglingLayers (`[1,2]`, CNOT,
+analytic `lightning.qubit`/Torch adjoint). These are fixed engineering choices for
+a controlled CPU simulation, not established optima or hardware execution.
+Adam 0.001, normalized Huber delta 1, batch 128, at most 100 epochs, patience 10
+with 0.001 kW daylight validation improvement; paired seeds 2107–2111, four threads.
+Forest `forest_05` (32.87024469806436 kW daylight validation MAE) stays an external reference.
+
+Optional dependencies are not part of the frozen baseline lock. Install CPU Torch,
+then the extra with the lock as constraints; stop if resolution conflicts:
+```powershell
+.\.venv\Scripts\python -m pip install -c requirements-lock.txt "torch>=2.6,<3" --index-url https://download.pytorch.org/whl/cpu
+.\.venv\Scripts\python -m pip install -c requirements-lock.txt -e ".[neural-quantum]"
+.\.venv\Scripts\python -B scripts/train_stage2_neural.py --prepare
+.\.venv\Scripts\python -B scripts/train_stage2_neural.py --pilot
+```
+Preparation writes nothing. The pilot updates disposable models on the same 1,024
+training examples and saves timing only in `outputs/2107_stage2_neural/pilot.json`.
+Review its full-budget runtime estimates before `--train --model classical` (or
+`quantum`) `--seed 2107 --accept-pilot`; add `--resume` after interruption.
+Repeat seeds explicitly; `--summary` reports per-seed metrics and mean/sample SD,
+without selecting a seed or averaging forecasts. Keep the entire ignored output
+directory durably: preprocessing/settings, per-seed best/last complete checkpoints,
+history, metrics and keyed validation predictions. Validation is used for stopping;
+parts of the eventual test period were previously explored; testing remains gated.
+
+Kaggle GPU batches use `scripts/train_stage2_quantum_gpu.py`: the same 89-parameter
+quantum model and unchanged trainer, with native `lightning.gpu`, complex128
+statevectors, analytic expectations and adjoint gradients. Small Torch layers stay
+on CPU in float64; shared initialization remains identical to completed classical
+runs. The Linux-only `quantum-gpu` extra adds the native simulator without changing
+the frozen lock. No CPU fallback is permitted. Four-qubit GPU speedup is unproven.
+
+```powershell
+.\.venv\Scripts\python -B scripts/train_stage2_quantum_gpu.py --prepare
+.\.venv\Scripts\python -B scripts/kaggle_stage2_pilot.py --package
+```
+
+The package in `outputs/2107_kaggle_quantum_gpu/` contains separate private GPU
+Script jobs in `pilot/` and `training/`, plus minimal inputs in `dataset/`.
+Existing CPU preparation/results remain untouched. Packaging verifies original
+classical source hashes, preprocessing, training/validation fingerprints and counts;
+measurement copies exclude the test period. No credentials or environments are bundled.
+Remote setup pins completed classical Torch/PennyLane versions and the frozen lock;
+dependency conflicts fail rather than upgrade baseline packages.
+
+Proposed dataset: `anokgaming/pv2107-quantum-inputs`; pilot:
+`anokgaming/pv2107-quantum-correction`; separate training notebook:
+`anokgaming/pv2107-quantum-training`. Check each resource's existence, privacy and
+purpose before manually creating/pushing; do not overwrite unrelated resources.
+Dataset creation defaults private (omit `--public`); both notebooks explicitly
+set `is_private: true`, GPU enabled. No upload or launch happens during preparation.
+
+The GPU pilot checks native GPU execution, float64 outputs and nonzero projection/
+circuit gradients against the CPU reference (output atol/rtol 1e-10/1e-8; gradients
+1e-9/1e-6), plus finite differences. It times the same 1,024 training examples,
+warm-up, eight update batches and separate inference. Its five-seed, 100-epoch
+extrapolation assumes no early-stopping savings and excludes setup/checkpoint I/O.
+After downloading and reviewing `2107_stage2_quantum_gpu/gpu_pilot.json`, accept it
+locally, then submit training separately:
+```powershell
+.\.venv\Scripts\python -B scripts/kaggle_stage2_pilot.py --accept-gpu-pilot outputs/2107_kaggle_quantum_gpu/pilot_output/2107_stage2_quantum_gpu/gpu_pilot.json
+.\.venv-kaggle\Scripts\kaggle.exe kernels push -p outputs/2107_kaggle_quantum_gpu/training
+```
+Acceptance records the pilot hash and resolved native dependency versions in the
+training launcher. Training requires that exact attached successful pilot and
+matching code/data/preprocessing/settings/software/GPU architecture; it runs seeds
+2107?2111 with the existing full-data budget, stopping policy and shuffled orders.
+Neither job transitions to another job, retries, resubmits, keeps alive or sets a
+custom wall-clock limit. Normal completion or failure saves status/logs and exits.
+
+Download and retain `quantum_gpu_batch.log`, `quantum_gpu_batch_status.json` and the
+entire `2107_stage2_quantum_gpu/` directory: pilot, settings/preprocessing, per-seed
+best/last complete checkpoints, histories, metrics and keyed validation predictions.
+For manual recovery, `--resume-output <downloaded/2107_stage2_quantum_gpu>` prepares
+`dataset/resume.zip`; publish a new version of the same verified private dataset
+and manually resubmit training. Compatible completed seeds are checked and skipped;
+others resume from atomic epoch checkpoints including optimizer and RNG state.
+Work within an interrupted epoch is lost. Kaggle-imposed termination may prevent
+status writing or publication of working outputs: checkpoint recovery is possible
+only when those files are actually retrievable. No custom duration limit guarantees
+completion. GPU correctness, installed native backend compatibility and useful speed
+remain unverified until the manual GPU pilot; testing remains untouched.

@@ -58,6 +58,12 @@ def window_mask(index, valid, horizon):
     return result
 
 
+def available_environment(environment, index):
+    """Latest label 15–30 minutes before each requested feature timestamp."""
+    return environment.reindex(index-pd.Timedelta(minutes=15), method="ffill",
+                               tolerance=pd.Timedelta(minutes=15))
+
+
 def origin_features(plant, poa, zero_fraction, environment, elevation):
     index = plant.index
     f = pd.DataFrame(index=index)
@@ -67,8 +73,7 @@ def origin_features(plant, poa, zero_fraction, environment, elevation):
         for lag in (5, 15, 30):
             f[f"{label}_change{lag}"] = f[f"{label}_lag0"]-f[f"{label}_lag{lag}"]
     # Backward lookup only; the 15-minute allowance avoids a forward weather join.
-    weather = environment.reindex(index-pd.Timedelta(minutes=15), method="ffill",
-                                  tolerance=pd.Timedelta(minutes=15))
+    weather = available_environment(environment, index)
     f["ambient_c"] = weather.ambient_temperature_c.to_numpy()
     f["wind_m_s"] = weather.wind_speed_m_s.to_numpy()
     f["zero_unit_fraction"] = zero_fraction
