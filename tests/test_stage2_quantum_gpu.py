@@ -326,11 +326,103 @@ def test_native_cuda_sync_uses_torch_device(monkeypatch):
     assert calls==[device]
 
 
-@pytest.mark.parametrize("mode,version,allowed", [
-    ("--broadcast-benchmark","2.14.1+cu128",True),
-    ("--broadcast-benchmark","2.15.0+cu128",False),
-    ("--prepare","2.14.1+cu128",False)])
-def test_torch_build_exception_is_limited_to_benchmark(monkeypatch,tmp_path,mode,version,allowed):
+@pytest.mark.parametrize("changed", [False, True])
+def test_saved_cpu_comparison_only_times_requested_batches(monkeypatch,tmp_path,changed):
+    pytest.importorskip("torch")
+    pytest.importorskip("pennylane")
+    import pandas as pd
+    monkeypatch.setattr(gpu,"OUT",tmp_path/"reference")
+    spec = {key:{} for key in ("architecture","settings","split","features","counts","daylight_n",
+                              "target_scale_ddof","target_centered","frame_fingerprints","preprocessing_sha256","versions")}
+    spec.update(dimension=14,target_scale_kw=2.)
+    indices = np.random.default_rng(2107).choice(1024,1024,replace=False)
+    metric = "rough_three_seeds_100_epochs_hours"
+    saved = dict(status="complete",device="cpu",seed=2107,repetitions=5,parameters=89,
+                 sample_sha256=hashlib.sha256(indices.tobytes()).hexdigest(),reference_specification=spec,
+                 benchmark_source_sha256="old timing implementation",equivalence={str(n):dict(passed=True) for n in (128,256)},
+                 execution=dict(backend="default.qubit",differentiation="backprop",shots=None,
+                                torch_dtype="float64",state_dtype="complex128",torch_device="cpu"),
+                 summary={f"broadcast_{n}":{metric:dict(median=20.)} for n in (128,256)})
+    path = tmp_path/"saved_cpu.json"
+    path.write_text(json.dumps(saved))
+    before = path.read_bytes()
+    if changed:
+        spec["frame_fingerprints"] = dict(training="different data")
+    calls = []
+    monkeypatch.setattr(gpu,"compare",lambda *args:dict(passed=True))
+    monkeypatch.setattr(gpu,"broadcast_evidence",lambda *args:dict(verified=True))
+    def measured(model,x,y,training_n,validation_n,size):
+        calls.append(size)
+        assert len(x)==1024 and training_n==1024 and validation_n==10
+        return {metric:10.}
+    monkeypatch.setattr(gpu,"timing",measured)
+    x = dict(training=np.zeros((1024,14)),validation=np.zeros((10,14)))
+    tables = dict(training=pd.DataFrame(dict(correction_kw=np.ones(1024))))
+    if changed:
+        with pytest.raises(ValueError,match="frame_fingerprints"):
+            gpu.broadcast_benchmark(x,tables,spec,"cpu",cpu_reference=path)
+        assert not calls
+    else:
+        gpu.broadcast_benchmark(x,tables,spec,"cpu",cpu_reference=path)
+        assert len(calls)==10 and calls.count(128)==calls.count(256)==5
+        result = json.loads((tmp_path/"2107_stage2_quantum_broadcast/benchmark_cpu.json").read_text())
+        assert result["cpu_to_gpu_speed_ratios"]==dict(broadcast_128=2.,broadcast_256=2.)
+        assert result["status"]=="complete" and "reference_row_128" not in result["timings"]
+    assert path.read_bytes()==before
+
+
+def test_benchmark_torch_exception_cannot_change_production(monkeypatch):
+    pytest.importorskip("torch")
+    def forbidden(): raise AssertionError("Must reject before loading data")
+    monkeypatch.setattr(gpu.cpu,"prepare_data",forbidden)
+    monkeypatch.setattr(sys,"argv",["gpu","--prepare","--benchmark-torch-release","2.11.0"])
+    with pytest.raises(SystemExit) as error:
+        gpu.main()
+    assert error.value.code==2
+
+
+def test_notebook_preparation_checks_archive_without_setup_or_benchmark(monkeypatch,tmp_path):
+    import ast
+    reference = {key:{} for key in ("settings","split","features","counts","dimension","daylight_n","target_scale_kw",
+                                    "frame_fingerprints","preprocessing_sha256","versions","source_hashes")}
+    saved = dict(status="complete",reference_specification=reference,
+                 equivalence={str(n):dict(passed=True) for n in (128,256)})
+    monkeypatch.chdir(tmp_path)
+    directory = tmp_path/"outputs/2107_stage2_quantum_broadcast"
+    directory.mkdir(parents=True)
+    (directory/"benchmark_cpu.json").write_text(json.dumps(saved))
+    (tmp_path/"scripts").mkdir()
+    (tmp_path/"scripts/train_stage2_quantum_gpu.py").write_text("# synthetic overlay\n")
+    package = tmp_path/"prepared"
+    (package/"dataset").mkdir(parents=True)
+    with zipfile.ZipFile(package/"dataset/project.zip","w") as archive:
+        for name in batch.RUNTIME_FILES:
+            archive.writestr(name,json.dumps(reference) if name=="classical_reference_settings.json" else "")
+    def forbidden(*args,**kwargs): raise AssertionError("Preparation must not install, compute or rebuild inputs")
+    monkeypatch.setattr(batch.subprocess,"run",forbidden)
+    monkeypatch.setattr(batch.venv.EnvBuilder,"create",forbidden)
+    monkeypatch.setattr(batch,"package",forbidden)
+    before = (package/"dataset/project.zip").read_bytes()
+    batch.benchmark_notebook(package)
+    notebook = json.loads((directory/"kaggle_benchmark.ipynb").read_text())
+    code = ["".join(c["source"]) for c in notebook["cells"] if c["cell_type"]=="code"]
+    for cell in code:
+        ast.parse(cell)
+    assert "verify_inputs(project)" in code[0] and "subprocess.run(" not in code[0]
+    assert "--cpu-reference" in code[-1] and "--train-all" not in code[-1]
+    assert "torch==2.11.0+cu128" in code[1] and "with_pip=False" in code[1]
+    assert (package/"dataset/project.zip").read_bytes()==before
+    with pytest.raises(FileExistsError):
+        batch.benchmark_notebook(package)
+
+
+@pytest.mark.parametrize("mode,version,release,allowed", [
+    ("--broadcast-benchmark","2.14.1+cu128",None,True),
+    ("--broadcast-benchmark","2.15.0+cu128",None,False),
+    ("--broadcast-benchmark","2.11.0+cu128","2.11.0",True),
+    ("--broadcast-benchmark","2.10.0+cu128","2.11.0",False),
+    ("--prepare","2.14.1+cu128",None,False)])
+def test_torch_build_exception_is_limited_to_benchmark(monkeypatch,tmp_path,mode,version,release,allowed):
     torch = pytest.importorskip("torch")
     reference = {name:{} for name in ("settings","split","seeds","features","dimension","counts","daylight_n",
                                      "target_scale_kw","frame_fingerprints","preprocessing_sha256","source_hashes")}
@@ -341,7 +433,11 @@ def test_torch_build_exception_is_limited_to_benchmark(monkeypatch,tmp_path,mode
     monkeypatch.setattr(gpu.cpu,"prepare_data",lambda:({}, {}, None, original, {}))
     calls = []
     monkeypatch.setattr(gpu,"broadcast_benchmark",lambda *args:calls.append(args))
-    monkeypatch.setattr(sys,"argv",["gpu",mode]+(["--device","cpu"] if mode=="--broadcast-benchmark" else []))
+    monkeypatch.setattr(torch.cuda,"is_available",lambda:True)
+    options = ["--device","cuda" if release else "cpu"] if mode=="--broadcast-benchmark" else []
+    if release:
+        options += ["--benchmark-torch-release",release]
+    monkeypatch.setattr(sys,"argv",["gpu",mode]+options)
     old = torch.get_default_dtype()
     try:
         if allowed:

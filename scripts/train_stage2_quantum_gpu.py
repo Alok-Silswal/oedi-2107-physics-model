@@ -47,7 +47,7 @@ def make_model(dimension, seed, backend="lightning.gpu", *, batched=False):
     return model
 
 
-def read_checkpoint(path, spec):
+def read_checkpoint(path, spec, parameters=89):
     import torch
     allowed = [np._core.multiarray._reconstruct, np.ndarray, np.dtype, np.dtypes.UInt32DType,
                np._core.multiarray.scalar, np.dtypes.Float64DType]
@@ -55,7 +55,7 @@ def read_checkpoint(path, spec):
         state = torch.load(path, map_location="cpu", weights_only=True)
     if cpu.canonical(state["specification"]) != cpu.canonical(spec):
         raise ValueError("Incompatible GPU checkpoint")
-    if sum(p.numel() for p in state["model"].values())!=89 or not all(
+    if sum(p.numel() for p in state["model"].values())!=parameters or not all(
             p.dtype==torch.float64 and torch.isfinite(p).all() for p in state["model"].values()):
         raise ValueError("Invalid GPU checkpoint model parameters")
     return state
@@ -276,7 +276,7 @@ def broadcast_evidence(model, x):
                 state_dtype=str(state.dtype), state_shape=list(state.shape), tracker=tracker.totals)
 
 
-def broadcast_benchmark(x, tables, spec, device):
+def broadcast_benchmark(x, tables, spec, device, cpu_reference=None):
     import torch
     if device=="cuda" and not torch.cuda.is_available():
         raise ValueError("CUDA-enabled Torch and a GPU are required; no CPU fallback or installation")
@@ -293,18 +293,33 @@ def broadcast_benchmark(x, tables, spec, device):
                        torch_dtype="float64", state_dtype="complex128", torch_device=device),
         benchmark_source_sha256=cpu.digest(Path(__file__)), device=device,
         hardware=torch.cuda.get_device_name(0) if device=="cuda" else "CPU (four threads)",
-        cuda_version=torch.version.cuda, seed=2107, batch_sizes=[64,128,256], repetitions=5,
+        cuda_version=torch.version.cuda, seed=2107, batch_sizes=[128,256] if cpu_reference else [64,128,256], repetitions=5,
         sample_sha256=hashlib.sha256(indices.tobytes()).hexdigest(), seeds_estimated=[2107,2108,2109],
         parameters=sum(p.numel() for p in candidate.parameters()),
         gpu_budget=dict(weekly_hours=30, planning_reserve_hours=5, compute_hours=25),
         limitations="Timing only, not model selection or training approval. Validation time is extrapolated from training-input inference. Estimates assume all 100 epochs, exclude setup/data transfer/checkpoint/final-evaluation overhead, and are not guaranteed bounds. Batch 64/256 is diagnostic only; agreed training batch remains 128.")
     path.parent.mkdir(parents=True,exist_ok=True)
     try:
+        if cpu_reference:
+            saved = json.loads(Path(cpu_reference).read_text())
+            if (saved.get("status")!="complete" or saved.get("device")!="cpu"
+                    or saved.get("execution")!=dict(record["execution"],torch_device="cpu")
+                    or any(saved.get(key)!=record[key] for key in ("sample_sha256","parameters","seed","repetitions"))
+                    or not all(saved.get("equivalence",{}).get(str(n),{}).get("passed") for n in (128,256))):
+                raise ValueError("Incompatible saved CPU benchmark")
+            for key in ("architecture","settings","split","features","dimension","counts","daylight_n",
+                        "target_scale_kw","target_scale_ddof","target_centered","frame_fingerprints","preprocessing_sha256"):
+                if cpu.canonical(saved["reference_specification"][key])!=cpu.canonical(spec[key]):
+                    raise ValueError(f"CPU benchmark differs: {key}")
+            record["cpu_reference"] = dict(sha256=cpu.digest(Path(cpu_reference)),
+                versions=saved["reference_specification"]["versions"], source_sha256=saved["benchmark_source_sha256"],
+                summary={name:saved["summary"][name] for name in ("broadcast_128","broadcast_256")},
+                limitation="Different machines and potentially Torch releases; this is not an isolated hardware-speed comparison.")
         record["equivalence"] = {str(size):compare(reference,candidate,sample[:size],target[:size])
                                  for size in record["batch_sizes"]}
         record["native_broadcast"] = broadcast_evidence(candidate,sample[:256])
         initial = {name:p.clone() for name,p in reference.state_dict().items()}
-        configurations = dict(reference_row_128=(reference,128))
+        configurations = {} if cpu_reference else dict(reference_row_128=(reference,128))
         configurations.update({f"broadcast_{size}":(candidate,size) for size in record["batch_sizes"]})
         record["timings"] = {name:[] for name in configurations}
         names = list(configurations)
@@ -316,8 +331,12 @@ def broadcast_benchmark(x, tables, spec, device):
                 print(f"Broadcast benchmark {repeat+1}/5: {name} complete",flush=True)
         record["summary"] = {name:summarize_timings(values) for name,values in record["timings"].items()}
         metric = "rough_three_seeds_100_epochs_hours"
-        baseline = record["summary"]["reference_row_128"][metric]["median"]
-        record["speed_ratios"] = {name:baseline/values[metric]["median"] for name,values in record["summary"].items()}
+        if cpu_reference:
+            record["cpu_to_gpu_speed_ratios"] = {name:saved["summary"][name][metric]["median"]/values[metric]["median"]
+                                                 for name,values in record["summary"].items()}
+        else:
+            baseline = record["summary"]["reference_row_128"][metric]["median"]
+            record["speed_ratios"] = {name:baseline/values[metric]["median"] for name,values in record["summary"].items()}
         if device=="cuda":
             record["within_25_hour_compute_budget"] = {
                 name:values[metric]["maximum"]<=25 for name,values in record["summary"].items() if name!="reference_row_128"}
@@ -391,9 +410,13 @@ def main():
     parser.add_argument("--pilot-file", type=Path, default=OUT/"gpu_pilot.json")
     parser.add_argument("--accept-pilot", action="store_true")
     parser.add_argument("--device", choices=["cpu","cuda"], help="Required only with --broadcast-benchmark")
+    parser.add_argument("--cpu-reference", type=Path, help="GPU benchmark only: compare saved CPU timings; time only batched 128/256")
+    parser.add_argument("--benchmark-torch-release", help="Explicit benchmark-only Torch release exception, recorded in results")
     args = parser.parse_args()
     if args.broadcast_benchmark != (args.device is not None):
         parser.error("--broadcast-benchmark requires --device cpu or cuda; --device is only for this benchmark")
+    if (args.cpu_reference or args.benchmark_torch_release) and not (args.broadcast_benchmark and args.device=="cuda"):
+        parser.error("CPU reference and Torch release exception are only for the CUDA broadcast benchmark")
     if args.broadcast_benchmark and args.device=="cuda" and not torch.cuda.is_available():
         parser.error("CUDA-enabled Torch and a GPU are required; no fallback or installation")
     if args.train_all and not args.accept_pilot:
@@ -407,6 +430,8 @@ def main():
             # A CUDA build of the same Torch release is isolated to this benchmark.
             actual, expected = dict(actual), dict(expected)
             actual["torch"], expected["torch"] = actual["torch"].split("+")[0], expected["torch"].split("+")[0]
+            if args.benchmark_torch_release:
+                expected["torch"] = args.benchmark_torch_release
         if cpu.canonical(actual) != cpu.canonical(expected):
             raise ValueError(f"Differs from completed classical reference: {key}")
     for name, expected in reference["source_hashes"].items():
@@ -417,7 +442,10 @@ def main():
     torch.set_default_dtype(torch.float64)
     d = original["dimension"]
     if args.broadcast_benchmark:
-        broadcast_benchmark(x,tables,original,args.device)
+        if args.cpu_reference:
+            broadcast_benchmark(x,tables,original,args.device,cpu_reference=args.cpu_reference)
+        else:
+            broadcast_benchmark(x,tables,original,args.device)
         return
     if args.prepare:
         try:

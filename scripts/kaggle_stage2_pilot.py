@@ -11,6 +11,7 @@ import tomllib
 import zipfile
 import hashlib
 import venv
+import inspect
 
 JOB_MODE = "pilot"
 ACCEPTED_PILOT_SHA256 = None
@@ -182,6 +183,123 @@ def extract(archive_path, destination):
         archive.extractall(destination)
 
 
+def benchmark_notebook(package_directory):
+    """Embed a small code overlay; reuse the existing, exact input archive."""
+    archive = Path(package_directory)/"dataset/project.zip"
+    hashes = input_hashes(archive)
+    cpu_path = Path("outputs/2107_stage2_quantum_broadcast/benchmark_cpu.json")
+    saved = json.loads(cpu_path.read_text())
+    with zipfile.ZipFile(archive) as z:
+        reference = json.loads(z.read("classical_reference_settings.json"))
+        for key in ("settings","split","features","counts","dimension","daylight_n","target_scale_kw",
+                    "frame_fingerprints","preprocessing_sha256","versions"):
+            if reference[key]!=saved["reference_specification"][key]:
+                raise ValueError(f"Packaged inputs differ from CPU benchmark: {key}")
+        for name, expected in reference["source_hashes"].items():
+            relative = "scripts/"+name.replace("\\","/").rsplit("/",1)[-1]
+            if hashes.get(relative)!=expected:
+                raise ValueError(f"Packaged reference code differs: {relative}")
+    if saved.get("status")!="complete" or not all(saved["equivalence"][str(n)]["passed"] for n in (128,256)):
+        raise ValueError("A completed, correct CPU benchmark is required")
+    # Exercise the same extraction/content checks locally without loading data or models.
+    global EXPECTED_INPUT_HASHES
+    previous = EXPECTED_INPUT_HASHES
+    try:
+        EXPECTED_INPUT_HASHES = hashes
+        with tempfile.TemporaryDirectory() as temporary:
+            extract(archive,temporary)
+            identity = verify_inputs(temporary)
+    finally:
+        EXPECTED_INPUT_HASHES = previous
+    overlay = Path("scripts/train_stage2_quantum_gpu.py").read_text()
+    preflight = "import hashlib, json, os, subprocess, sys, time, venv, zipfile\nfrom pathlib import Path\n"
+    preflight += f"EXPECTED_INPUT_HASHES = {hashes!r}\nRUNTIME_FILES = {RUNTIME_FILES!r}\n"
+    preflight += inspect.getsource(extract)+"\n"+inspect.getsource(verify_inputs)
+    preflight += f'''
+started = time.perf_counter()
+archives = list(Path("/kaggle/input").rglob("project.zip"))
+if len(archives)!=1:
+    raise ValueError("Attach exactly one existing private PV2107 project.zip input")
+if hashlib.sha256(archives[0].read_bytes()).hexdigest()!={hashlib.sha256(archive.read_bytes()).hexdigest()!r}:
+    raise ValueError("Wrong dataset archive/version; stop and select the matching existing version, not a blind upload")
+root = Path("/tmp/pv2107-native-benchmark")
+root.mkdir(exist_ok=False)
+project = root/"project"
+extract(archives[0],project)
+print("Verified input identity:", verify_inputs(project))
+work = Path("/kaggle/working/native_benchmark")
+work.mkdir(exist_ok=False)
+(root/"train_stage2_quantum_gpu.py").write_text({overlay!r})
+(root/"benchmark_cpu.json").write_text({cpu_path.read_text()!r})
+print("Verified inputs; no fitting or timing has run.")
+'''
+    setup = '''
+env = os.environ.copy()
+env.update(PYTHONPATH=os.pathsep.join(map(str,(root,project/"scripts",project/"src"))),
+           PYTHONDONTWRITEBYTECODE="1", CUDA_VISIBLE_DEVICES="0", OMP_NUM_THREADS="4", MKL_NUM_THREADS="4")
+venv.EnvBuilder(with_pip=False).create(root/"venv")
+python = str(root/"venv/bin/python")
+pip = [sys.executable,"-m","pip","--python",python]
+reference = json.loads((project/"classical_reference_settings.json").read_text())
+pins = [f"{name}=={reference['versions'][name]}" for name in ("pennylane","pennylane-lightning")]
+constraints = root/"cuda-constraints.txt"
+constraints.write_text("torch==2.11.0+cu128\\n"+"\\n".join(pins)+"\\n")
+status = dict(status="failed", phase="environment", input_fingerprint=verify_inputs(project))
+try:
+    with (work/"setup.log").open("x") as log:
+        subprocess.run([*pip,"install","--only-binary=:all:","--index-url","https://download.pytorch.org/whl/cu128",
+                        "torch==2.11.0+cu128"], check=True, env=env, stdout=log, stderr=subprocess.STDOUT)
+        subprocess.run([*pip,"install","--only-binary=:all:","-r",str(project/"requirements-lock.txt"),
+                        "-c",str(constraints),*pins], check=True, env=env, stdout=log, stderr=subprocess.STDOUT)
+    subprocess.run([python,"-c","import torch; print(torch.__version__, torch.version.cuda); assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"],check=True,env=env)
+    status.update(status="prepared",phase="ready")
+finally:
+    status["elapsed_seconds"] = time.perf_counter()-started
+    (work/"status.json").write_text(json.dumps(status,indent=2))
+print("CUDA Torch ready. Setup log:",work/"setup.log")
+'''
+    benchmark = '''
+if status["status"]!="prepared":
+    raise ValueError("Environment preparation must finish successfully first")
+status.update(status="failed",phase="benchmark")
+runner = "from pathlib import Path; import train_stage2_quantum_gpu as b; b.OUT=Path('/kaggle/working/native_benchmark/unused');\\nwith b.threadpool_limits(limits=4): b.main()"
+try:
+    with (work/"benchmark.log").open("x") as log:
+        subprocess.run([python,"-B","-u","-c",runner,"--broadcast-benchmark","--device","cuda",
+                        "--cpu-reference",str(root/"benchmark_cpu.json"),"--benchmark-torch-release","2.11.0"],
+                       cwd=project,env=env,stdout=log,stderr=subprocess.STDOUT,check=True)
+    result = json.loads((work/"2107_stage2_quantum_broadcast/benchmark_cuda.json").read_text())
+    print(json.dumps({key:result[key] for key in ("status","native_broadcast","summary","cpu_to_gpu_speed_ratios","within_25_hour_compute_budget")},indent=2))
+    status.update(status="complete",phase="finished")
+finally:
+    status["elapsed_seconds"] = time.perf_counter()-started
+    (work/"status.json").write_text(json.dumps(status,indent=2))
+    print("Download native_benchmark outputs and stop the session. Status:",status)
+'''
+    note = ("# PV2107 bounded native-batch GPU benchmark\n"
+            "Keep this notebook private; attach the existing private `anokgaming/pv2107-quantum-inputs` dataset. "
+            "Choose a single-GPU accelerator if available, enable Internet, then Save Version / Run All for a finite batch. "
+            "Only CUDA device 0 is used; hiding a second allocated GPU does not release it. "
+            "No dataset upload or full training is needed. Input verification precedes installation.\n\n"
+            "Target: under one GPU-hour including setup, not a guaranteed wall-clock bound. "
+            "Five warmed repetitions on the same 1,024 training rows at batches 128 and 256; "
+            "the CPU row reference is used only for unchanged correctness checks. "
+            "CUDA state/device checks and synchronization are mandatory. "
+            "Torch 2.11.0+cu128 is an explicit isolated benchmark exception to CPU 2.14.1+cpu; "
+            "other reference versions remain pinned. Timing differences include software/hardware effects. "
+            "Batch 256 is a candidate, not approved training. No retry or transition to training.\n\n"
+            "Download `native_benchmark/` (results, status and logs). If using an interactive session, stop it manually afterward. "
+            "On input mismatch, identify the matching existing dataset version before continuing.\n")
+    cells = [dict(cell_type="markdown",metadata={},source=note.splitlines(keepends=True))]
+    for code in (preflight,setup,benchmark):
+        compile(code,"<benchmark-notebook>","exec")
+        cells.append(dict(cell_type="code",metadata={},source=code.splitlines(keepends=True),execution_count=None,outputs=[]))
+    path = cpu_path.parent/"kaggle_benchmark.ipynb"
+    with path.open("x",encoding="utf-8") as stream:
+        json.dump(dict(nbformat=4,nbformat_minor=4,metadata=dict(kernelspec=dict(display_name="Python 3",language="python",name="python3")),cells=cells),stream,indent=1)
+    print("Notebook only (no rebuild/upload):",path,"input identity:",identity)
+
+
 def accept_pilot(path, destination):
     saved = json.loads(Path(path).read_text())
     if saved.get("status")!="complete" or not saved.get("correctness", {}).get("passed") or not saved.get("gpu", {}).get("verified"):
@@ -322,12 +440,18 @@ def run(project, work, stage):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", action="store_true", help="Build the local private input bundle/metadata only; no remote calls")
+    parser.add_argument("--benchmark-notebook", action="store_true", help="Prepare native CUDA benchmark notebook using an existing --package-dir; no archive rebuild")
     parser.add_argument("--diagnostic", action="store_true", help="With --package, prepare the optional batching diagnostic instead of the normal pilot")
     parser.add_argument("--package-dir", type=Path, default=Path("outputs/2107_kaggle_quantum_gpu"))
     parser.add_argument("--accept-gpu-pilot", type=Path, help="Record manual acceptance of a downloaded successful GPU pilot; no launch")
     parser.add_argument("--resume-output", type=Path, help="Package downloaded GPU checkpoints for manual recovery; no launch")
     parser.add_argument("--project-input", type=Path, help="Attached project root; otherwise require exactly one matching input")
     args = parser.parse_args()
+    if args.benchmark_notebook:
+        if args.package or args.diagnostic or args.accept_gpu_pilot or args.resume_output:
+            parser.error("--benchmark-notebook must be used separately")
+        benchmark_notebook(args.package_dir)
+        return 0
     if args.diagnostic and not args.package:
         parser.error("--diagnostic requires --package")
     if args.package:

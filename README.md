@@ -518,6 +518,83 @@ directory durably: preprocessing/settings, per-seed best/last complete checkpoin
 history, metrics and keyed validation predictions. Validation is used for stopping;
 parts of the eventual test period were previously explored; testing remains gated.
 
+Held-out ML/DL evaluation is prepared in `scripts/evaluate_stage2.py`. Freeze
+`forest_05` and all five completed classical seeds before generating test inputs:
+```powershell
+.\.venv\Scripts\python -B scripts/evaluate_stage2.py --prepare
+.\.venv\Scripts\python -B scripts/forecast_stage2_weather.py --step testing --allow-test
+.\.venv\Scripts\python -B scripts/calculate_stage2_physics.py --step testing --allow-test
+.\.venv\Scripts\python -B scripts/evaluate_stage2.py --evaluate --allow-test
+```
+These are manual commands: the weather step reuses all three saved validation
+models (zero fits), then frozen physics and the selected corrections run once.
+The evaluator requires unchanged artifact hashes, complete classical checkpoints,
+exact target matching and common eligibility for physics, persistence, RF and
+every neural seed. It saves keyed predictions and daylight/all-day MAE, RMSE and
+prediction-minus-actual bias in `outputs/2107_stage2_test/`. It does not choose a
+seed or ensemble. Parts of this test period appeared in earlier exploratory work.
+Existing neural/HPO scores are validation results; this test evaluation is pending.
+
+### CPU quantum handover (start only after ML/DL test review)
+
+`scripts/train_stage2_quantum_cpu.py` keeps the 89-parameter four-qubit/two-layer
+circuit, float64/complex128, initialization, signed correction, training-fitted
+preprocessing, uncentered target-SD scaling, Huber 1, Adam 0.001, 100 epochs,
+patience 10 and 0.001 kW validation improvement. It uses native-batched
+`default.qubit`/Torch backprop, **batch 256**, seeds **2107–2109**, four CPU threads.
+Batch 256 is an approved setting change for this separate run, not an accuracy
+equivalence claim. Retain the original CPU reference and completed classical runs.
+
+GitHub alone omits the data and fitted preprocessing. Send the prepared ignored
+`outputs/2107_stage2_quantum_cpu_friend.zip`: it contains the existing verified
+`project.zip` unchanged, current CPU/helper code, focused tests and these steps.
+The inner package includes only training/validation measurements, saved physics,
+portable HPO manifest, hashed Ridge preprocessing and authoritative classical
+reference settings. It omits test data, classical checkpoints, credentials and
+environments. Kaggle and CUDA are not needed.
+
+Friend setup (Windows PowerShell, Python 3.11; use a fresh folder):
+```powershell
+Expand-Archive .\2107_stage2_quantum_cpu_friend.zip -DestinationPath .\pv2107-friend
+Set-Location .\pv2107-friend
+if ((Get-FileHash .\project.zip -Algorithm SHA256).Hash -ne '91e3e2e73ebaf3b46149a4e1ed98f0888f85b755555ba96700c14e4e9a92c437') { throw 'Wrong input package' }
+Expand-Archive .\project.zip -DestinationPath .\project
+Copy-Item .\code\scripts\*.py .\project\scripts\
+Copy-Item .\code\tests .\project\ -Recurse
+Set-Location .\project
+py -3.11 -m venv .venv
+.\.venv\Scripts\python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.14.1+cpu'
+.\.venv\Scripts\python -m pip install -r requirements-lock.txt -c neural-constraints.txt -e '.[neural-quantum]'
+.\.venv\Scripts\python -B -m pytest tests/test_stage2_quantum_cpu.py tests/test_stage2_neural.py -q
+.\.venv\Scripts\python -B scripts/train_stage2_quantum_cpu.py --prepare
+```
+Use exact recorded versions; if a wheel/pin is unavailable, stop and report the
+conflict rather than upgrading. Installation availability on the friend's machine
+has not been verified. Preparation checks counts (221057/70555; daylight 43949),
+data/preprocessing/source fingerprints and tiny output/loss/gradient equivalence;
+it does not fit on the real data. No packages are installed automatically.
+
+After our ML/DL test review and explicit start approval, run each seed once:
+```powershell
+foreach ($seed in 2107,2108,2109) {
+    & .\.venv\Scripts\python -B scripts/train_stage2_quantum_cpu.py --train --seed $seed --accept-runtime
+    if ($LASTEXITCODE -ne 0) { throw "Stopped at seed $seed" }
+}
+# Resume only the interrupted seed; change 2107 to its actual seed.
+.\.venv\Scripts\python -B scripts/train_stage2_quantum_cpu.py --train --seed 2107 --resume --accept-runtime
+.\.venv\Scripts\python -B scripts/train_stage2_quantum_cpu.py --summary
+Compress-Archive .\outputs\2107_stage2_quantum_cpu -DestinationPath .\quantum_cpu_results.zip
+```
+Return the full results archive separately: best/last checkpoints (including
+optimizer/RNG), preprocessing, keyed validation predictions, history and settings.
+Also send per-seed `metrics.json`, `history.csv` and settings as a small summary
+bundle suitable for deliberate Git inclusion. Report every seed and mean/sample
+SD; no best-seed selection or ensemble. Interrupted work resumes from the last
+atomic epoch checkpoint; updates after that checkpoint are repeated. No full-data
+training was run during preparation. The saved CPU batch-256 benchmark estimates
+about 16.7 hours for three seeds × 100 epochs including validation (observed timing
+spread 10.0–18.2 hours); hardware/setup/I/O vary and early stopping is not assumed.
+
 Kaggle GPU batches use `scripts/train_stage2_quantum_gpu.py`: the same 89-parameter
 quantum model and unchanged trainer, with native `lightning.gpu`, complex128
 statevectors, analytic expectations and adjoint gradients. Small Torch layers stay
@@ -580,6 +657,28 @@ No fallback or installation occurs. Estimates cover three seeds × 100 epochs
 The 30-hour GPU planning budget reserves five hours for setup/final evaluation;
 this is an allowance, not a runtime guarantee. Alternate batch sizes are diagnostic
 only; neither benchmark promotes a training path or authorizes full training.
+
+For the short Kaggle notebook, reuse the already verified input package (no rebuild):
+```powershell
+.\.venv\Scripts\python -B scripts/kaggle_stage2_pilot.py --benchmark-notebook --package-dir outputs/2107_kaggle_quantum_gpu_reference_fix
+```
+Import `outputs/2107_stage2_quantum_broadcast/kaggle_benchmark.ipynb` into a private
+Kaggle notebook, attach the existing private `anokgaming/pv2107-quantum-inputs`
+version matching its hashes, select a single-GPU accelerator if available, enable
+Internet, and Save Version / Run All. Only device 0 is used; hiding a second GPU
+does not release that allocation.
+It checks the exact archive and all 44 input hashes before setup, then times only
+native batches 128/256 on 1,024 training rows, five warmed repetitions each.
+The row reference remains for correctness only. CUDA state verification and
+synchronized timing are mandatory. Download `native_benchmark/` results/status/logs;
+stop any interactive session afterward. Target under one GPU-hour including setup,
+not a guarantee; no retry or transition to training. Wrong inputs stop before setup.
+The isolated notebook pins CUDA Torch 2.11.0+cu128 because the official CUDA 12.8
+index lacks the saved CPU release 2.14.1. This explicit benchmark-only exception
+leaves classical/training checks intact; saved CPU comparisons include hardware
+and Torch-version differences. Three-seed estimates assume 100 epochs and include
+validation; batch 256 remains unapproved for training. Other pins remain unchanged.
+
 After downloading and reviewing `2107_stage2_quantum_gpu/gpu_pilot.json`, accept it
 locally, then submit training separately:
 ```powershell
