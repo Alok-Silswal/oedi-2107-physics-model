@@ -535,6 +535,10 @@ Script jobs in `pilot/` and `training/`, plus minimal inputs in `dataset/`.
 Existing CPU preparation/results remain untouched. Packaging verifies original
 classical source hashes, preprocessing, training/validation fingerprints and counts;
 measurement copies exclude the test period. No credentials or environments are bundled.
+Each generated launcher pins the archive's exact relative file paths and SHA-256
+hashes, verifies the mounted inputs before setup, and records their content identity
+in batch status. Dataset metadata names a slug, not a version: stale or mixed
+attachments fail before installation. Original classical manifests remain unchanged.
 Remote setup pins completed classical Torch/PennyLane versions and the frozen lock;
 dependency conflicts fail rather than upgrade baseline packages.
 
@@ -550,6 +554,32 @@ circuit gradients against the CPU reference (output atol/rtol 1e-10/1e-8; gradie
 1e-9/1e-6), plus finite differences. It times the same 1,024 training examples,
 warm-up, eight update batches and separate inference. Its five-seed, 100-epoch
 extrapolation assumes no early-stopping savings and excludes setup/checkpoint I/O.
+The saved version 5 pilot passed correctness, but its unsynchronized extrapolation
+was 780.75 GPU hours versus 329.77 CPU hours. Optional `--package --diagnostic
+--package-dir outputs/2107_kaggle_quantum_gpu_diagnostic` prepares a separate
+`gpu_batch_diagnostic.json`: unchanged per-row calls versus one broadcast QNode
+call per batch, plus the CPU reference. Lightning 0.45.0
+[expands broadcasts into separate circuits](https://github.com/PennyLaneAI/pennylane-lightning/blob/v0.45.0/pennylane_lightning/lightning_gpu/lightning_gpu.py);
+this is not native vectorized GPU simulation. Equivalence precedes timing; five
+rotating, warmed repetitions reset parameters/Adam and use native
+`DevPool.syncDevice()` before/after timed regions. Median, range and speed ratios
+are reported; wide timing ranges remain inconclusive. Production training stays
+per-row. The diagnostic cannot authorize training, and does not overwrite pilot
+evidence. GPU source changes require a new dataset version and compatible normal
+pilot before any later training acceptance; old pilot provenance remains intact.
+For native batching, `--broadcast-benchmark --device cpu` on the same GPU script
+compares the unchanged row/adjoint reference at batch 128 with `default.qubit` /
+Torch backprop at batches 64, 128 and 256. The original four-qubit/two-layer circuit,
+89 parameters, float64/complex128 precision, Adam and normalized Huber loss remain.
+Five warmed repetitions follow prediction/loss/all-gradient equivalence checks;
+the result is separate: `outputs/2107_stage2_quantum_broadcast/benchmark_cpu.json`.
+Use `--device cuda` only with a CUDA-enabled build of the same Torch release and a
+GPU: the model and native batched simulator then run on CUDA and synchronize there.
+No fallback or installation occurs. Estimates cover three seeds × 100 epochs
+(five also reported), using training-input inference to estimate validation cost.
+The 30-hour GPU planning budget reserves five hours for setup/final evaluation;
+this is an allowance, not a runtime guarantee. Alternate batch sizes are diagnostic
+only; neither benchmark promotes a training path or authorizes full training.
 After downloading and reviewing `2107_stage2_quantum_gpu/gpu_pilot.json`, accept it
 locally, then submit training separately:
 ```powershell
@@ -573,5 +603,5 @@ others resume from atomic epoch checkpoints including optimizer and RNG state.
 Work within an interrupted epoch is lost. Kaggle-imposed termination may prevent
 status writing or publication of working outputs: checkpoint recovery is possible
 only when those files are actually retrievable. No custom duration limit guarantees
-completion. GPU correctness, installed native backend compatibility and useful speed
-remain unverified until the manual GPU pilot; testing remains untouched.
+completion. Broadcast GPU correctness and synchronized speed remain unverified
+until the manual diagnostic; testing remains untouched.

@@ -2,7 +2,7 @@
 import argparse
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
 import sys
@@ -15,9 +15,65 @@ import venv
 JOB_MODE = "pilot"
 ACCEPTED_PILOT_SHA256 = None
 GPU_RUNTIME_PINS = []
+EXPECTED_INPUT_HASHES = {}
+RUNTIME_FILES = ("classical_reference_settings.json", "neural-constraints.txt",
+                 "pyproject.toml", "requirements-lock.txt")
 
 
-def package(destination):
+def input_hashes(archive_path):
+    with zipfile.ZipFile(archive_path) as archive:
+        names = [entry.filename for entry in archive.infolist() if not entry.is_dir()]
+        if len(names)!=len(set(names)):
+            raise ValueError("Duplicate project archive entries")
+        return {name:hashlib.sha256(archive.read(name)).hexdigest() for name in sorted(names)}
+
+
+def verify_inputs(project):
+    root = Path(project).resolve()
+    if not EXPECTED_INPUT_HASHES:
+        raise ValueError("Unprepared launcher: package the inputs before submission")
+    missing = [name for name in RUNTIME_FILES if name not in EXPECTED_INPUT_HASHES or not (root/name).is_file()]
+    if missing:
+        raise ValueError(f"Missing required runtime inputs (file or fingerprint): {missing}")
+    actual = {p.relative_to(root).as_posix():p for p in root.rglob("*") if p.is_file()}
+    # These are transport containers, not consumed project files.
+    actual = {name:p for name,p in actual.items() if name not in ("project.zip", "resume.zip")}
+    if actual.keys()!=EXPECTED_INPUT_HASHES.keys():
+        raise ValueError(f"Wrong project file set: missing={sorted(EXPECTED_INPUT_HASHES.keys()-actual.keys())}, unexpected={sorted(actual.keys()-EXPECTED_INPUT_HASHES.keys())}")
+    for name, expected in EXPECTED_INPUT_HASHES.items():
+        path = actual[name]
+        if not path.resolve().is_relative_to(root) or hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+            raise ValueError(f"Project SHA-256 mismatch: {name}; attach the dataset version matching this launcher")
+    return hashlib.sha256(json.dumps(EXPECTED_INPUT_HASHES, sort_keys=True).encode()).hexdigest()
+
+
+def portable_manifest(project):
+    def unique(pairs):
+        result = dict(pairs)
+        if len(result)!=len(pairs):
+            raise ValueError("Duplicate manifest key")
+        return result
+    directory = Path(project)/"outputs/2107_stage2_correction"
+    path = directory/"hpo/settings.json"
+    saved = json.loads(path.read_text(), object_pairs_hook=unique)
+    hashes = {}
+    for name, sha in saved["plan"]["baseline_hashes"].items():
+        relative = PureWindowsPath(name)
+        if relative.drive or relative.root or ".." in relative.parts or len(relative.parts)!=3 or relative.parts[:2]!=("outputs", "2107_stage2_correction"):
+            raise ValueError(f"Unexpected baseline fingerprint path: {name}")
+        key = relative.as_posix()
+        if key in hashes:
+            raise ValueError(f"Duplicate baseline fingerprint path: {key}")
+        hashes[key] = sha
+    source = directory/"ridge.joblib"
+    key = "outputs/2107_stage2_correction/ridge.joblib"
+    if key not in hashes or hashlib.sha256(source.read_bytes()).hexdigest()!=hashes[key]:
+        raise ValueError("Saved training-fitted preprocessing fingerprint differs or is missing")
+    saved["plan"]["baseline_hashes"] = hashes
+    path.write_text(json.dumps(saved, indent=2))
+
+
+def package(destination, diagnostic=False):
     import pandas as pd
     import pyarrow.parquet as pq
     from forecast_stage2_weather import DATA, SPLIT, training_blocks
@@ -54,12 +110,15 @@ def package(destination):
             target = staged/source
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
-        reference = json.loads(Path("outputs/2107_stage2_neural/settings.json").read_text())
+        # Normalize only the copied manifest; original provenance stays untouched.
+        portable_manifest(staged)
+        reference_path = Path("outputs/2107_stage2_neural/settings.json")
+        reference = json.loads(reference_path.read_text())
         for name, expected in reference["source_hashes"].items():
             source = staged/"scripts"/name.replace("\\", "/").rsplit("/",1)[-1]
             if hashlib.sha256(source.read_bytes()).hexdigest()!=expected:
                 raise ValueError("Completed classical source fingerprint changed")
-        (staged/"classical_reference_settings.json").write_text(json.dumps(reference, indent=2))
+        shutil.copyfile(reference_path, staged/"classical_reference_settings.json")
         (staged/"neural-constraints.txt").write_text("\n".join(
             f"{name}=={reference['versions'][name]}" for name in ("torch", "pennylane", "pennylane-lightning"))+"\n")
         first = min(pd.read_parquet(weather/f"physics_{step}.parquet").index.min() for step in steps)
@@ -94,7 +153,9 @@ def package(destination):
                                     ("training", "pv2107-quantum-training", "PV2107 Quantum Training")]:
         kernel = destination/mode
         kernel.mkdir()
-        text = Path(__file__).read_text().replace('JOB_MODE = "pilot"', f'JOB_MODE = "{mode}"', 1)
+        workload = "diagnostic" if diagnostic and mode=="pilot" else mode
+        text = Path(__file__).read_text().replace('JOB_MODE = "pilot"', f'JOB_MODE = "{workload}"', 1)
+        text = text.replace("EXPECTED_INPUT_HASHES = {}", f"EXPECTED_INPUT_HASHES = {input_hashes(dataset/'project.zip')!r}", 1)
         (kernel/"kaggle_stage2_pilot.py").write_text(text)
         (kernel/"kernel-metadata.json").write_text(json.dumps(dict(
             id=f"anokgaming/{identifier}", title=title,
@@ -108,10 +169,14 @@ def package(destination):
 def extract(archive_path, destination):
     destination = Path(destination).resolve()
     with zipfile.ZipFile(archive_path) as archive:
+        seen = set()
         for info in archive.infolist():
             target = (destination/info.filename).resolve()
             if not target.is_relative_to(destination) or (info.external_attr >> 16) & 0o170000 == 0o120000:
                 raise ValueError("Unsafe input archive member")
+            if target in seen:
+                raise ValueError("Duplicate input archive path")
+            seen.add(target)
             if target.is_file():
                 raise ValueError("Archive would overwrite an existing file")
         archive.extractall(destination)
@@ -133,6 +198,7 @@ def accept_pilot(path, destination):
     pins = [f"{name}=={version}" for name, version in saved["specification"]["versions"].items()
             if name.startswith(("nvidia-", "custatevec-")) or name=="pennylane-lightning-gpu"]
     text = Path(__file__).read_text().replace('JOB_MODE = "pilot"', 'JOB_MODE = "training"', 1)
+    text = text.replace("EXPECTED_INPUT_HASHES = {}", f"EXPECTED_INPUT_HASHES = {input_hashes(destination/'dataset/project.zip')!r}", 1)
     text = text.replace("ACCEPTED_PILOT_SHA256 = None", f"ACCEPTED_PILOT_SHA256 = {digest!r}", 1)
     text = text.replace("GPU_RUNTIME_PINS = []", f"GPU_RUNTIME_PINS = {pins!r}", 1)
     (destination/"training/kaggle_stage2_pilot.py").write_text(text)
@@ -168,6 +234,9 @@ def run(project, work, stage):
     log = work/"quantum_gpu_batch.log"
     result = dict(workload=JOB_MODE, status="failed", exit_code=1)
     try:
+        result["phase"] = "inputs"
+        result["input_fingerprint"] = verify_inputs(project)
+        print(f"Verified project inputs: {result['input_fingerprint']}", flush=True)
         # Refuse reuse rather than overwrite an earlier job's outputs/checkpoints.
         stage.mkdir(exist_ok=False)
         for name in ("scripts", "src", "data"):
@@ -175,6 +244,7 @@ def run(project, work, stage):
             if not source.is_dir():
                 raise ValueError(f"Missing project input directory: {source}")
             (stage/name).symlink_to(source, target_is_directory=True)
+        (stage/"classical_reference_settings.json").symlink_to(project/"classical_reference_settings.json")
         (stage/"outputs").mkdir()
         for name in ("2107_stage2_weather", "2107_stage2_correction"):
             source = project/"outputs"/name
@@ -211,15 +281,17 @@ def run(project, work, stage):
         with log.open("x") as stream:
             result["phase"] = "environment"
             environment = stage/"venv"
-            venv.EnvBuilder(with_pip=True).create(environment)
+            # Kaggle Python may omit ensurepip; host pip can manage a pip-less venv.
+            venv.EnvBuilder(with_pip=False).create(environment)
             python = str(environment/"bin/python")
+            pip = [sys.executable, "-m", "pip", "--python", python]
             result["phase"] = "torch"
-            child = subprocess.run([python, "-m", "pip", "install", "--index-url", "https://download.pytorch.org/whl/cpu",
+            child = subprocess.run([*pip, "install", "--index-url", "https://download.pytorch.org/whl/cpu",
                                     "torch=="+reference["versions"]["torch"]],
                                    cwd=stage, env=env, stdout=stream, stderr=subprocess.STDOUT)
             if child.returncode == 0:
                 result["phase"] = "dependencies"
-                child = subprocess.run([python, "-m", "pip", "install", "-r", str(project/"requirements-lock.txt"),
+                child = subprocess.run([*pip, "install", "-r", str(project/"requirements-lock.txt"),
                                         "-c", str(project/"neural-constraints.txt"), *extras["neural-quantum"],
                                         *extras["quantum-gpu"], *GPU_RUNTIME_PINS],
                                        cwd=stage, env=env, stdout=stream, stderr=subprocess.STDOUT)
@@ -232,7 +304,7 @@ def run(project, work, stage):
                 env["LD_LIBRARY_PATH"] = ":".join(paths)
                 result["phase"] = JOB_MODE
                 command = [python, "-B", "-u", str(stage/"scripts/train_stage2_quantum_gpu.py")]
-                command += ["--pilot"] if JOB_MODE=="pilot" else ["--train-all", "--accept-pilot"]
+                command += ["--"+JOB_MODE] if JOB_MODE in ("pilot", "diagnostic") else ["--train-all", "--accept-pilot"]
                 child = subprocess.run(command,
                                        cwd=stage, env=env, stdout=stream, stderr=subprocess.STDOUT)
         result.update(exit_code=child.returncode, status="complete" if child.returncode==0 else "failed")
@@ -250,13 +322,16 @@ def run(project, work, stage):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", action="store_true", help="Build the local private input bundle/metadata only; no remote calls")
+    parser.add_argument("--diagnostic", action="store_true", help="With --package, prepare the optional batching diagnostic instead of the normal pilot")
     parser.add_argument("--package-dir", type=Path, default=Path("outputs/2107_kaggle_quantum_gpu"))
     parser.add_argument("--accept-gpu-pilot", type=Path, help="Record manual acceptance of a downloaded successful GPU pilot; no launch")
     parser.add_argument("--resume-output", type=Path, help="Package downloaded GPU checkpoints for manual recovery; no launch")
     parser.add_argument("--project-input", type=Path, help="Attached project root; otherwise require exactly one matching input")
     args = parser.parse_args()
+    if args.diagnostic and not args.package:
+        parser.error("--diagnostic requires --package")
     if args.package:
-        package(args.package_dir)
+        package(args.package_dir, diagnostic=args.diagnostic)
         return 0
     if args.accept_gpu_pilot:
         accept_pilot(args.accept_gpu_pilot, args.package_dir)
