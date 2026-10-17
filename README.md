@@ -533,7 +533,29 @@ exact target matching and common eligibility for physics, persistence, RF and
 every neural seed. It saves keyed predictions and daylight/all-day MAE, RMSE and
 prediction-minus-actual bias in `outputs/2107_stage2_test/`. It does not choose a
 seed or ensemble. Parts of this test period appeared in earlier exploratory work.
-Existing neural/HPO scores are validation results; this test evaluation is pending.
+The saved ML/DL test evaluation is complete: 77,561 eligible rows, including
+48,190 daylight rows. Preserve these results; do not rerun the commands above.
+
+CPU quantum testing is separate in `scripts/evaluate_stage2_quantum.py`. Return
+the entire `2107_stage2_quantum_cpu/` folder, including root settings/preprocessing
+and each seed's settings, best/last checkpoints and metrics. For a returned ZIP
+containing that top-level folder, from the repository directory:
+```powershell
+if (Test-Path .\outputs\2107_stage2_quantum_cpu) { throw 'Existing runs: do not overwrite' }
+Expand-Archive -LiteralPath .\quantum_cpu_results.zip -DestinationPath .\outputs
+.\.venv\Scripts\python -B scripts/evaluate_stage2_quantum.py --prepare
+# After reviewing readiness, explicitly authorize test scoring:
+.\.venv\Scripts\python -B scripts/evaluate_stage2_quantum.py --evaluate --allow-test
+```
+Preparation checks completed validation-selected seeds 2107–2109, source/settings
+identity and saved fitted preprocessing without loading or scoring test rows.
+Testing uses CPU float64 native `default.qubit`/backprop, batch 256, on exactly the
+saved ML/DL keys, labels and physics forecasts. It writes separate predictions,
+provenance and daylight/all-day MAE, RMSE, prediction-minus-actual bias and R² to
+`outputs/2107_stage2_quantum_test/`, including per-seed scores and their mean/sample
+standard deviation. No fitting, seed selection, ensemble or overwrite is allowed.
+Actual quantum testing remains pending returned checkpoints. The test period's
+earlier exploratory exposure still applies.
 
 ### CPU quantum handover (start only after ML/DL test review)
 
