@@ -32,7 +32,7 @@ def runs(monkeypatch, tmp_path):
                  evaluation.baseline.CORRECTION, evaluation.baseline.WEATHER, Path("scripts")):
         path.mkdir()
     sources = {}
-    for name in ("train_stage2_neural.py", "train_stage2_quantum_cpu.py", "train_stage2_quantum_gpu.py"):
+    for name in ("train_stage2_neural.py", "train_stage2_quantum_cpu.py", "stage2_shared.py"):
         path = Path("scripts")/name
         path.write_text("synthetic source identity")
         sources[path.as_posix()] = evaluation.digest(path)
@@ -99,7 +99,8 @@ def test_completed_checkpoints_and_preprocessing_compatibility(runs):
     plan = evaluation.frozen_artifacts()
     assert plan["quantum_reference"] == spec
     settings = evaluation.native.OUT/"settings.json"
-    for key, value in (("architecture", "other"), ("source_hashes", {}), ("target_scale_kw", 3.)):
+    duplicate = dict(spec["source_hashes"], **{"./scripts/train_stage2_neural.py": spec["source_hashes"]["scripts/train_stage2_neural.py"]})
+    for key, value in (("architecture", "other"), ("source_hashes", {}), ("source_hashes", duplicate), ("target_scale_kw", 3.)):
         settings.write_text(json.dumps(dict(spec, **{key: value})))
         with pytest.raises(ValueError):
             evaluation.frozen_artifacts()

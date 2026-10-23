@@ -12,6 +12,7 @@ import evaluate_stage2 as baseline
 import train_stage2_quantum_cpu as native
 from compare_stage2_correction import canonical, FEATURES
 from audit_stage2_readiness import digest, solar_elevation
+from stage2_shared import verify_hashes, preserve_plan, current_source
 
 OUT = Path("outputs/2107_stage2_quantum_test")
 KEYS = ["target_timestamp", "actual_target_power_kw", "physics_forecast_kw"]
@@ -77,14 +78,15 @@ def frozen_artifacts():
     expected_sources = {"scripts/"+n.replace("\\", "/").rsplit("/", 1)[-1]: h
                         for n, h in reference["source_hashes"].items()}
     expected_sources.update({str(p): digest(p) for p in
-                            (Path("scripts/train_stage2_quantum_cpu.py"), Path("scripts/train_stage2_quantum_gpu.py"))})
+                            (Path("scripts/train_stage2_quantum_cpu.py"), Path("scripts/stage2_shared.py"))})
     expected_sources = {Path(n).as_posix(): h for n, h in expected_sources.items()}
-    if spec["source_hashes"] != expected_sources:
+    if (len(spec["source_hashes"]) != len(expected_sources)
+            or {current_source(n).resolve() for n in spec["source_hashes"]} != {current_source(n).resolve() for n in expected_sources}):
         raise ValueError("Quantum training source provenance differs")
-    for name, expected in {**saved["source_hashes"], **expected_sources}.items():
-        if digest(Path(name)) != expected:
-            raise ValueError(f"Frozen source/artifact changed: {name}")
-        paths.append(Path(name))
+    verify_hashes(spec["source_hashes"])
+    verify_hashes(saved["source_hashes"])
+    for name in {**saved["source_hashes"], **expected_sources}:
+        paths.append(current_source(name))
     # Compare fitted objects, not serialization bytes that can differ across checkouts.
     if digest(baseline.CORRECTION/"ridge.joblib") != spec["preprocessing_sha256"]:
         raise ValueError("Training preprocessing source changed")
@@ -99,10 +101,11 @@ def frozen_artifacts():
     paths += [Path(__file__), native.neural.OUT/"settings.json"]
     paths.extend(baseline.WEATHER/name for name in
                  ("forecasts_testing.parquet", "physics_testing.parquet", "testing_settings.json", "physics_testing_settings.json"))
-    return dict(protocol="stage2-frozen-cpu-quantum-test-v1", quantum_reference=spec,
+    result = dict(protocol="stage2-frozen-cpu-quantum-test-v1", quantum_reference=spec,
                 source_hashes={p.as_posix(): digest(p) for p in paths},
                 scoring="Saved ML/DL rows; target elevation>0; bias=prediction-actual; no clipping; R2 undefined for constant targets",
                 disclosure=saved["disclosure"])
+    return preserve_plan(OUT/"settings.json", result)
 
 
 def aligned_inputs(saved, features, table, day, recorded_scores):

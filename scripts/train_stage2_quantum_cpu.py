@@ -11,7 +11,7 @@ import pandas as pd
 from threadpoolctl import threadpool_limits
 
 import train_stage2_neural as neural
-from train_stage2_quantum_gpu import make_model, read_checkpoint, compare, broadcast_evidence
+from stage2_shared import make_model, read_checkpoint, compare, broadcast_evidence, preserve_plan
 
 OUT = Path("outputs/2107_stage2_quantum_cpu")
 SEEDS = [2107,2108,2109]
@@ -34,7 +34,7 @@ def prepare_data():
             raise ValueError(f"Completed classical reference differs: {key}")
     # Relative source identities allow the friend to resume after moving the checkout.
     sources = [Path("scripts")/n.replace("\\","/").rsplit("/",1)[-1] for n in reference["source_hashes"]]
-    sources += [Path(__file__),Path("scripts/train_stage2_quantum_gpu.py")]
+    sources += [Path(__file__),Path("scripts/stage2_shared.py")]
     spec.update(architecture="stage2-native-batched-cpu-v1",settings=SETTINGS,seeds=SEEDS,
                 classical_reference_commit=reference["source_commit"],
                 source_hashes={"scripts/"+p.name:neural.digest(p) for p in sources},
@@ -53,6 +53,7 @@ def inference(model,x):
 def train(seed,resume,x,tables,day,spec,preprocessing):
     import torch
     torch.set_default_dtype(torch.float64)
+    spec = preserve_plan(OUT/"settings.json", spec)
     run_spec = dict(spec,model="quantum",seed=seed)
     directory = OUT/"quantum"/f"seed_{seed}"
     directory.mkdir(parents=True,exist_ok=True)

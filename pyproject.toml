@@ -13,7 +13,6 @@ dependencies = ["pvlib>=0.13,<0.17", "pandas>=2.2,<4", "numpy>=1.26,<3", "pyarro
 test = ["pytest>=8,<10"]
 real-data = ["matplotlib>=3.9,<4", "scikit-learn>=1.7,<1.8", "scipy>=1.9.2,<2", "joblib>=1.2,<2", "threadpoolctl>=3.1,<4", "xgboost>=3.1,<3.2"]
 neural-quantum = ["torch>=2.6,<3", "PennyLane>=0.45,<0.46", "PennyLane-Lightning>=0.45,<0.46"]
-quantum-gpu = ["PennyLane-Lightning-GPU==0.45.0; sys_platform == 'linux'"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

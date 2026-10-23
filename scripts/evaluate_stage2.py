@@ -10,7 +10,7 @@ import pyarrow.parquet as pq
 from threadpoolctl import threadpool_limits
 
 import train_stage2_neural as neural
-from train_stage2_quantum_gpu import read_checkpoint
+from stage2_shared import read_checkpoint, preserve_plan
 from compare_stage2_correction import FEATURES, OUT as CORRECTION, canonical, examples, metrics
 from forecast_stage2_weather import SPLIT, DATA, OUT as WEATHER, VARIABLES, split_masks
 from calculate_stage2_physics import complete_fleet_power
@@ -36,7 +36,7 @@ def frozen_artifacts():
     candidate = next(c for c in hpo["plan"]["candidates"] if c["id"]=="forest_05")
     paths = [neural.OUT/"settings.json",CORRECTION/"hpo/settings.json",CORRECTION/"hpo/best_forest.joblib",
              CORRECTION/"ridge.joblib",WEATHER/"validation_models.joblib",WEATHER/"validation_settings.json",
-             WEATHER/"training_1_settings.json",Path(__file__),Path("scripts/train_stage2_quantum_gpu.py")]
+             WEATHER/"training_1_settings.json",Path(__file__),Path("scripts/stage2_shared.py")]
     if digest(CORRECTION/"ridge.joblib")!=reference["preprocessing_sha256"]:
         raise ValueError("Training-fitted neural preprocessing differs")
     forest = joblib.load(CORRECTION/"hpo/best_forest.joblib")
@@ -60,12 +60,13 @@ def frozen_artifacts():
             raise ValueError(f"Classical seed {seed} did not finish consistently")
         paths.extend(directory/n for n in ("settings.json","metrics.json","best.pt","last.pt"))
     paths.extend(DATA/f"2107_{n}.parquet" for n in ("electrical_clean","electrical_qc_events","irradiance_clean","irradiance_qc_events"))
-    return dict(protocol="stage2-frozen-test-v1",split=SPLIT,features=FEATURES,selected_trial="forest_05",
+    result = dict(protocol="stage2-frozen-test-v1",split=SPLIT,features=FEATURES,selected_trial="forest_05",
                 seeds=neural.SEEDS,neural_reference=reference,
                 source_hashes={p.as_posix():digest(p) for p in paths},
                 selection="Frozen validation selections; no fitting, tuning, seed selection or test-driven changes",
                 scoring="Identical eligible rows for all models; target elevation>0 daylight; bias=prediction-actual; no clipping",
                 disclosure="Parts of this chronological test period appeared in earlier exploratory work; held out from these model fits, not entirely unseen")
+    return preserve_plan(OUT/"settings.json", result)
 
 
 def load_testing_examples():
